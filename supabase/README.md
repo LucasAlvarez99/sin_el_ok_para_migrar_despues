@@ -42,13 +42,14 @@ El progreso se guarda con la función SQL `save_progress()` (no pasa por Edge Fu
 > Los nombres exactos de los menús pueden variar; lo importante es cada dato de la lista.
 
 ### 2. Supabase
-1. Crear el proyecto. Instalar el [CLI](https://supabase.com/docs/guides/cli) y `supabase link`.
-2. Aplicar la base: `supabase db push` (usa `supabase/migrations/`).
-3. Registrar la primera cuenta desde la web y convertirla en admin con
-   `supabase/promote_admin.example.sql` (SQL Editor).
-4. Cargar secretos: copiar `supabase/.env.example` a `supabase/.env`, completarlo y ejecutar
-   `supabase secrets set --env-file supabase/.env`.
-5. Desplegar: `supabase functions deploy` (usa `supabase/config.toml`).
+Desde la **raíz del proyecto** (ver README principal: `npm install` y completar `.env`):
+1. Crear el proyecto en supabase.com y copiar el *Reference ID* a `SUPABASE_PROJECT_REF` en `.env`.
+2. `npm run sb:login` (abre el navegador) y luego `npm run sb:link`.
+3. `npm run sb:db-push` aplica la base (`supabase/migrations/`).
+4. Registrar la primera cuenta desde la web y convertirla en admin con
+   `supabase/promote_admin.example.sql` (SQL Editor de Supabase).
+5. Completar `supabase/.env` con los datos de Bunny y ejecutar `npm run sb:secrets`.
+6. `npm run sb:deploy` publica las funciones.
 
 ### 3. UptimeRobot (que el proyecto gratuito no se pause)
 Monitor **HTTP(s)**, intervalo **5 min**, URL: `https://<PROJECT_REF>.supabase.co/functions/v1/health`.
@@ -75,10 +76,10 @@ cliente, el plan Pro es el paso siguiente.
 
 ## Pruebas
 ```
-cd supabase/functions
-deno test          # 37 pruebas: firmas, permisos, flujos y casos de error (sin red)
-deno lint .  &&  deno fmt --line-width=120 --check .
+npm test           # 37 pruebas: firmas, permisos, flujos y casos de error (sin red)
+npm run verify     # formato + lint + tipos + pruebas
 ```
-Las pruebas simulan Bunny y la base en memoria. Lo que **no** cubren (se valida con el primer video
-real, Fase 8): la API real de Bunny, la subida TUS desde el navegador, CORS del Pull Zone con
-hls.js, y los adaptadores `repo.supabase.ts` / `auth.supabase.ts` contra un proyecto real.
+Las pruebas viven en `supabase/functions/_tests/` y simulan Bunny y la base en memoria. Lo que **no**
+cubren (se valida con el primer video real, Fase 8): la API real de Bunny, la subida TUS desde el
+navegador, CORS del Pull Zone con hls.js, y los adaptadores `repo.supabase.ts` / `auth.supabase.ts`
+contra un proyecto real.

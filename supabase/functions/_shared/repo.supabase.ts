@@ -1,3 +1,4 @@
+// deno-lint-ignore no-import-prefix -- especificador npm: en línea, válido en Supabase Edge Functions
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { ClassRepo, ClassRow, NewClass, ProgressRow, VideoStatePatch } from "./ports.ts";
 
