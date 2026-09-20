@@ -89,22 +89,62 @@ Deno.test("create-upload: Bunny caído -> 502 y no se crea la clase", async () =
   assert.equal(repo.classes.size, 0);
 });
 
-Deno.test("create-upload: asociar video a clase existente; 409 si ya tiene; 404 si no existe", async () => {
+Deno.test("create-upload: asociar video a clase sin video; 404 si la clase no existe", async () => {
   const { deps, repo, api } = makeDeps();
   const h = createUpload(deps);
   const c = repo.addClass({ title: "Existente" });
   const ok = await h(post({ title: "ignorado", class_id: c.id }, "admin"));
   assert.equal(ok.status, 200);
+  const body = await ok.json();
+  assert.equal(body.resumed, false);
   assert.ok(repo.classes.get(c.id)!.bunny_video_id);
   assert.equal(api.videos.size, 1);
+  assert.equal((await h(post({ title: "x", class_id: crypto.randomUUID() }, "admin"))).status, 404);
+});
 
-  const again = await h(post({ title: "x", class_id: c.id }, "admin"));
-  assert.equal(again.status, 409);
-  assert.equal(await errCode(again), "video_already_attached");
-  assert.equal(api.videos.size, 1); // no creó otro video
+Deno.test("create-upload: subida interrumpida (pending/uploading) se REANUDA con el mismo video", async () => {
+  const { deps, repo, api } = makeDeps();
+  const h = createUpload(deps);
+  for (const status of ["pending", "uploading"] as const) {
+    const v = await deps.bunny.createVideo("v");
+    const c = repo.addClass({ bunny_video_id: v.guid, video_status: status });
+    const before = api.videos.size;
+    const r = await h(post({ title: "x", class_id: c.id }, "admin"));
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.resumed, true);
+    assert.equal(body.upload.videoId, v.guid); // mismo video
+    assert.match(body.upload.signature, /^[0-9a-f]{64}$/); // firma nueva
+    assert.equal(api.videos.size, before); // no se creó otro en Bunny
+  }
+});
 
-  const missing = await h(post({ title: "x", class_id: crypto.randomUUID() }, "admin"));
-  assert.equal(missing.status, 404);
+Deno.test("create-upload: video fallido se REEMPLAZA y se borra el viejo de Bunny", async () => {
+  const { deps, repo, api } = makeDeps();
+  const old = await deps.bunny.createVideo("v");
+  const c = repo.addClass({ bunny_video_id: old.guid, video_status: "failed" });
+  const r = await createUpload(deps)(post({ title: "x", class_id: c.id }, "admin"));
+  assert.equal(r.status, 200);
+  const body = await r.json();
+  assert.notEqual(body.upload.videoId, old.guid);
+  assert.equal(repo.classes.get(c.id)!.bunny_video_id, body.upload.videoId);
+  assert.equal(repo.classes.get(c.id)!.video_status, "pending");
+  assert.equal(api.videos.has(old.guid), false); // sin huérfanos
+  assert.equal(api.videos.size, 1);
+});
+
+Deno.test("create-upload: video en uso (processing/ready) -> 409 y no se crea nada en Bunny", async () => {
+  const { deps, repo, api } = makeDeps();
+  const h = createUpload(deps);
+  for (const status of ["processing", "ready"] as const) {
+    const v = await deps.bunny.createVideo("v");
+    const c = repo.addClass({ bunny_video_id: v.guid, video_status: status });
+    const before = api.videos.size;
+    const r = await h(post({ title: "x", class_id: c.id }, "admin"));
+    assert.equal(r.status, 409);
+    assert.equal(await errCode(r), "video_already_attached");
+    assert.equal(api.videos.size, before);
+  }
 });
 
 // =============================================================== admin-sync-video
@@ -167,6 +207,24 @@ Deno.test("delete-class: borra video y clase; solo admin", async () => {
   assert.deepEqual(await r.json(), { deleted: true, class_id: c.id, video_deleted: true });
   assert.equal(repo.classes.size, 0);
   assert.equal(api.videos.size, 0);
+});
+
+Deno.test("delete-class: borra también la miniatura; si Storage falla no rompe el borrado", async () => {
+  const { deps, repo } = makeDeps();
+  const h = createDelete(deps);
+  const a = repo.addClass({
+    thumbnail_url: "https://x.supabase.co/storage/v1/object/public/class-thumbnails/a/1.webp",
+  });
+  assert.equal((await h(post({ class_id: a.id }, "admin"))).status, 200);
+  assert.deepEqual(repo.deletedThumbnails, [a.thumbnail_url]);
+
+  repo.failThumbnailDelete = true;
+  const b = repo.addClass({
+    thumbnail_url: "https://x.supabase.co/storage/v1/object/public/class-thumbnails/b/1.webp",
+  });
+  const r = await h(post({ class_id: b.id }, "admin"));
+  assert.equal(r.status, 200); // la clase ya se borró: la miniatura es secundaria
+  assert.equal(repo.classes.has(b.id), false);
 });
 
 Deno.test("delete-class: si Bunny falla NO se borra la clase (se puede reintentar)", async () => {

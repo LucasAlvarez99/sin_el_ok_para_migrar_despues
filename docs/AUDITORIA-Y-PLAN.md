@@ -1,0 +1,105 @@
+# Auditoría y plan por fases
+
+Fecha de la auditoría: 20/09/2026 · Base: repositorio `sin_el_ok_para_migrar_despues` (commit `3c25ac4`) + trabajo en curso.
+Reglas de trabajo: [`CLAUDE.md`](../CLAUDE.md).
+
+Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
+
+## 1. Qué existe hoy
+
+| Área | Estado real |
+|---|---|
+| Base de datos | `profiles`, `classes`, `entitlements`, `video_progress`; RLS en todas; privilegios por columna (los IDs de Bunny no son legibles); `can_access_class()`, `save_progress()`; bucket de miniaturas. **Probado en PostgreSQL** con esquema de Supabase simulado |
+| Backend | 6 Edge Functions (`admin-create-upload`, `admin-sync-video`, `admin-delete-class`, `playback`, `bunny-webhook`, `health`) con puertos/adaptadores; **43 pruebas** (firma idéntica a la oficial de Bunny, permisos, errores) |
+| Frontend | Sitio estático original. **En curso**: cliente Supabase, sesión, modal de acceso, reproductor HLS, tarjetas, guardado de progreso (código escrito, aún sin pruebas de navegador) |
+| Pagos / tienda | No existe nada |
+
+## 2. Huecos concretos frente a los 17 puntos
+
+| # | Requisito | Estado | Hueco concreto |
+|---|---|---|---|
+| 1 | Registro, login, logout, perfil, recuperación, sesión persistente | 🟡 | Módulos de sesión y modal escritos; **falta** página/edición de perfil y pruebas |
+| 2 | Catálogo real desde Supabase | 🟡 | RLS y columnas listas; **falta** conectar la home y la videoteca |
+| 3 | Videoteca protegida | 🟡 | `playback` protege en servidor; **falta** la página y el flujo de "iniciá sesión" |
+| 4 | Reproductor hls.js | 🟡 | Escrito; **sin probar en navegador** |
+| 5 | URLs firmadas y renovación | 🟡 | Firma en servidor ✅; renovación en el cliente escrita, sin probar |
+| 6 | Progreso (debounce, pausa, cambio de página, fin) | 🟡 | `ProgressReporter` y `save_progress` escritos; sin pruebas unitarias |
+| 7 | "Continuar viendo" | 🟡 | Consulta escrita; **falta** la sección |
+| 8 | Panel de negocio y panel técnico separados | ⬜ | Solo existe el rol `admin`; no hay superficies separadas |
+| 9 | Crear, editar, publicar, despublicar, eliminar clases | 🟡 | Funciones de backend ✅; **borrado es físico** (contra la regla); sin interfaz |
+| 10 | Subida directa a Bunny con progreso | 🟡 | Credenciales TUS ✅ y cliente de subida escrito; **sin interfaz** |
+| 11 | Estados de vídeo | 🟡 | Hay 5 (`pending, uploading, processing, ready, failed`); **falta `abandoned`** |
+| 12 | Reintentos y reconciliación | 🟡 | Webhook + sincronización manual + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y huérfanos en Bunny |
+| 13 | Base para pagos y entitlements | 🟡 | `entitlements` y `can_access_class()` ✅; **sin altas/bajas por casos de uso ni auditoría** |
+| 14 | Tests unitarios, integración y E2E | 🟡 | 43 unitarias de backend; **no hay** de frontend, contrato, integración entre módulos ni E2E |
+| 15 | Tres niveles de acceso | ⬜ | `role in ('user','admin')`; faltan `owner` y `developer`, y sus guardas |
+| 16 | Modularización con contratos | 🟡 | Patrón puertos/adaptadores en backend; **sin contratos formales, sin pruebas de contrato, sin regla anti-ciclos** |
+| 17 | Cobros digitales y físicos | ⬜ | Sin productos, pedidos, stock, envíos, devoluciones, proveedores ni webhooks de pago |
+
+**Transversales que faltan:** rate limiting · idempotencia de operaciones administrativas · historial de auditoría ·
+reproducibilidad (Deno sin versión exacta, `deno.lock` no versionado, sin `.nvmrc`, sin CI) ·
+12 enlaces `href="#"` y datos de ejemplo (cursos, clases en vivo, tienda, carrito, 14 imágenes de Unsplash) ·
+sin CSP ni cabeceras de seguridad en producción.
+
+## 3. Plan por fases
+
+Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba ejecutable de su alcance.
+
+### Fase 0 · Reproducibilidad (parte de la primera entrega)
+- **Archivos:** `.nvmrc` (Node 22), `package.json` (`engines` y `deno` con versión exacta, sin `^`), `supabase/functions/deno.lock` versionado y `--frozen` en los scripts, `.github/workflows/ci.yml`.
+- **Migraciones:** ninguna.
+- **Pruebas:** en un clon limpio, `nvm use && npm ci && npm run verify` da el mismo resultado; CI en verde.
+
+### Fase 1 · Frontend público (resto de la primera entrega)
+- **Archivos:** `js/lib/*`, `js/ui/*`, `js/components/*` (escritos), `js/pages/{home,videoteca,clase,cuenta}.js`, `videoteca.html`, `clase.html`, `cuenta.html`, `css/app.css`; cambios mínimos en `index.html` ya aplicados (enlaces reales, sin manejadores inline).
+- **Migraciones:** ninguna.
+- **Pruebas:** unitarias (`ProgressReporter`, formato, errores, configuración) y E2E en navegador real con backend simulado y HLS real: **carga, error, catálogo vacío, acceso denegado, video no listo, URL expirada con renovación, guardado de progreso y retomar**.
+
+### Fase 2 · Roles, modularización base y controles transversales
+- **Archivos:** `supabase/functions/_modules/*` (contratos `index.ts`), `_modules/common` (rate limiting, idempotencia, auditoría), guardas `requireOwner/requireDeveloper`, regla anti-ciclos verificada en CI.
+- **Migración:** roles `user | owner | developer`; `is_owner()`, `is_developer()` (`is_admin()` queda como alias temporal); tabla `audit_log` (solo inserción); tabla `idempotency_keys`; contadores de `rate_limits`.
+- **Pruebas:** matriz de permisos por rol en SQL; pruebas de contrato de cada módulo; de "acceso denegado" por nivel; de rate limit e idempotencia.
+
+### Fase 3 · Ciclo de vida del vídeo y reconciliación
+- **Migración:** estado `abandoned`; `classes.deleted_at` (borrado lógico); `video_events`; `reconciliation_runs`.
+- **Archivos:** función programada `reconcile-videos` (Supabase cron): marca subidas abandonadas (pendientes > 24 h), detecta videos huérfanos en Bunny y filas sin video, purga tras un período de gracia.
+- **Pruebas:** unitarias con Bunny simulado (huérfano, faltante, abandonado, reintento) y de integración separada, omitida sin credenciales.
+
+### Fase 4 · Panel de negocio (`/panel`, rol `owner`)
+- **Archivos:** `panel/index.html` + `js/panel/*`; funciones `panel-*` protegidas por `requireOwner`.
+- **Alcance:** clases (crear, editar, publicar, despublicar, borrar lógico), subida con barra de progreso, usuarios, entitlements (conceder/revocar con auditoría), métricas.
+- **Pruebas:** E2E del flujo completo; el propietario **no** ve ni recibe ningún secreto; usuario común denegado.
+
+### Fase 5 · Panel técnico interno (`/interno`, rol `developer`)
+- **Archivos:** `interno/index.html` + `js/interno/*`; funciones `tech-*`; tabla `app_settings`.
+- **Alcance:** diagnóstico, reconciliación manual, configuración, mantenimiento.
+- **Pruebas:** el propietario es **denegado** en toda ruta técnica (prueba de separación); todo queda auditado.
+
+### Fase 6 · Cobros digitales (Paddle)
+- **Migración:** `products`, `prices`, `orders`, `payments`, `subscriptions`, `payment_events` (idempotente, con identificador externo y estado).
+- **Archivos:** módulo `payments` agnóstico + adaptador `paddle`; `paddle-webhook` (firma verificada); reconciliación Paddle ↔ base.
+- **Regla:** el acceso se concede o revoca **solo** por webhook verificado, nunca por la redirección del navegador.
+- **Pruebas:** fixtures firmados (pago, renovación, reembolso, cancelación, duplicado); "cobrado sin acceso" y "acceso sin pago" detectados por la reconciliación.
+
+### Fase 7 · Tienda física
+- **Migración:** productos físicos, variantes (talla/color), stock y reservas, pedidos con máquina de estados, direcciones, impuestos, envíos, devoluciones, reembolsos, cancelaciones.
+- **Archivos:** puerto `commerce` + adaptador (Stripe o Shopify, ver decisiones), webhook firmado, reconciliación.
+- **Pruebas:** stock concurrente (sin sobreventa), estados válidos e inválidos, webhooks duplicados, reembolso parcial.
+
+### Fase 8 · Cierre para producción
+- CSP y cabeceras de seguridad, observabilidad, textos legales (RGPD/LOPDGDD), eliminar cualquier dato de ejemplo restante, ensayo de despliegue y de restauración.
+
+## 4. Decisiones que necesito de ti (bloquean fases concretas)
+
+1. **Desarrolladores vs. propietario (Fase 2).** ¿El rol `developer` incluye también los permisos de negocio del propietario, o solo el panel técnico? Propuesta: el desarrollador es un **superconjunto** (soporte), con todo auditado.
+2. **Tienda física (Fase 7).** **Shopify** trae de fábrica inventario, envíos, impuestos y devoluciones (menos código, pero el catálogo físico vive allí); **Stripe** deja todo en nuestra base (control total, pero hay que construir stock, envíos y devoluciones). Ojo: **Paddle solo sirve para productos digitales**. Mi recomendación: Shopify si quieren gestionar la tienda sin programador.
+3. **Modelo comercial (Fase 6).** ¿Qué se vende exactamente: clase suelta, curso, suscripción mensual/anual? ¿Precios y período de prueba?
+4. **Envíos (Fase 7).** ¿Solo España peninsular o también islas/UE?
+5. **Datos de ejemplo.** Hasta que existan pagos y tienda, las secciones "Cursos" y "Merchandising" muestran contenido inventado. Regla del proyecto: **no dejar datos falsos**. ¿Las oculto o las marco como "Próximamente"?
+6. **Legales.** Política de privacidad, términos y cookies (los redacta el cliente o su asesor); necesarios antes de abrir el registro.
+
+## 5. Riesgos
+
+- **Integraciones sin credenciales:** Bunny, Supabase real, Paddle y la tienda no se pueden validar aquí; hay simulaciones fieles (la firma de Bunny se comparó con su código oficial) y pruebas de integración aparte, pero la primera prueba real con cuentas puede mostrar ajustes.
+- **Alcance:** los puntos 15–17 son del tamaño de un producto entero; por eso van en fases y ninguna arranca sin cerrar la anterior.
+- **Coste:** con Paddle (comisión como comerciante de registro) y una tienda, el costo mensual deja de ser solo Bunny + Supabase; conviene estimarlo tras la decisión 3.

@@ -25,6 +25,13 @@ export function createHandler(deps: HandlerDeps) {
       if (row.bunny_video_id) videoDeleted = await bunny.deleteVideo(row.bunny_video_id);
 
       await repo.deleteClass(row.id);
+
+      // La miniatura es solo un archivo suelto: si no se puede borrar, no se falla la operación.
+      try {
+        await repo.deleteThumbnail(row.thumbnail_url);
+      } catch (e) {
+        console.error("[delete-class] thumbnail cleanup failed", e instanceof Error ? e.message : e);
+      }
       return { deleted: true, class_id: row.id, video_deleted: videoDeleted };
     },
   });

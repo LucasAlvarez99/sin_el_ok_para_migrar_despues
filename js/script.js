@@ -45,7 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 3) Link activo del navbar según la sección visible
   const links = document.querySelectorAll('.navbar-nav .nav-link');
-  const map = { inicio: 0, productos: 0, cursos: 1, clases: 2, tienda: 3, nosotros: 4 };
+  // Índices de los enlaces del menú ("Videoteca" es otra página, por eso no está en el mapa)
+  const map = { inicio: 0, productos: 0, cursos: 1, clases: 2, tienda: 4, nosotros: 5 };
   const spy = new IntersectionObserver((entries) => {
     entries.forEach((e) => {
       if (e.isIntersecting && map[e.target.id] !== undefined) {
@@ -56,7 +57,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }, { rootMargin: '-40% 0px -55% 0px' });
   Object.keys(map).forEach((id) => { const s = document.getElementById(id); if (s) spy.observe(s); });
 
-  // 4) Cierra el menú móvil al elegir una opción
+  // 4) Reemplaza los manejadores inline (onerror/onsubmit): permiten una CSP estricta sin scripts en línea
+  document.addEventListener('error', (e) => {
+    if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-hide-on-error')) e.target.remove();
+  }, true);
+  document.querySelectorAll('.search-pill').forEach((f) => f.addEventListener('submit', (e) => e.preventDefault()));
+
+  // 5) Cierra el menú móvil al elegir una opción
   const menu = document.getElementById('mainMenu');
   links.forEach((l) => l.addEventListener('click', () => {
     if (menu.classList.contains('show')) bootstrap.Collapse.getOrCreateInstance(menu).hide();

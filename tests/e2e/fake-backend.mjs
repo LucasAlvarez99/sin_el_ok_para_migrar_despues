@@ -1,0 +1,304 @@
+/**
+ * Backend de pruebas E2E: habla el mismo protocolo HTTP que Supabase para que la web use el
+ * `supabase-js` REAL (no un doble en el navegador):
+ *   /auth/v1/*       GoTrue mínimo (registro, login, sesión, recuperar, cerrar sesión)
+ *   /rest/v1/*       PostgREST mínimo (filtros, orden, embebidos, RPC) con la misma regla de privilegios:
+ *                    pedir columnas bunny_* de `classes` devuelve 401, como en la base real
+ *   /functions/v1/*  contrato de `playback` (la lógica real de esa función tiene sus propias pruebas en Deno)
+ * Más un CDN que valida el token en la RUTA como Bunny (/bcdn_token=…&token_path=…&expires=…/<guid>/…).
+ * Nada de esto se usa fuera de las pruebas.
+ */
+import http from 'node:http';
+import { createHmac, randomUUID } from 'node:crypto';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { extname, join, normalize } from 'node:path';
+import { ensureMedia } from './media.mjs';
+
+export const IDS = {
+  free: '00000000-0000-4000-8000-000000000001',
+  restricted: '00000000-0000-4000-8000-000000000002',
+  second: '00000000-0000-4000-8000-000000000003',
+  hidden: '00000000-0000-4000-8000-000000000004',
+};
+const TOKEN_KEY = 'e2e-token-auth-key';
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json', '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t' };
+const PRIVATE_COLS = ['bunny_video_id', 'bunny_library_id'];
+
+const b64url = (buf) => Buffer.from(buf).toString('base64url');
+const fakeJwt = (sub, ttl = 3600) => `${b64url('{"alg":"HS256","typ":"JWT"}')}.${b64url(JSON.stringify({ sub, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + ttl }))}.sig`;
+
+function seed() {
+  const now = new Date().toISOString();
+  const base = { description: null, thumbnail_url: null, level: 'principiante', category: null, access_level: 'free', sort_order: 0, is_published: true, published_at: now, video_status: 'ready', duration_seconds: 12, created_at: now, updated_at: now, bunny_video_id: IDS.free };
+  return {
+    users: new Map(), sessions: new Map(), recoveries: [], progress: new Map(), entitlements: new Set(),
+    classes: [
+      { ...base, id: IDS.free, title: 'Yoga para principiantes', description: 'Una práctica suave para empezar.\nSin prisa.', category: 'Vinyasa' },
+      { ...base, id: IDS.restricted, title: 'Curso avanzado (restringido)', access_level: 'restricted', level: 'avanzado', category: 'Fuerza', sort_order: 1 },
+      { ...base, id: IDS.second, title: 'Relajación profunda', level: 'todos', category: 'Relajación', sort_order: 2 },
+      { ...base, id: IDS.hidden, title: 'Borrador oculto', is_published: false, published_at: null },
+    ],
+    behavior: { catalogLatencyMs: 0, catalogFail: false, playbackTtl: 120, playbackForce: null, confirmEmail: false, saveFail: false },
+    log: { saves: [], playbackCalls: [], cdn: [] },
+  };
+}
+
+export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, cdn: 4175 }, progressIntervalSeconds = 2 }) {
+  let db = seed();
+  const mediaDir = ensureMedia(IDS.free);
+  const origin = { site: `http://127.0.0.1:${ports.site}`, api: `http://127.0.0.1:${ports.api}`, cdn: `http://127.0.0.1:${ports.cdn}` };
+
+  // ------------------------------------------------------------------ utilidades HTTP
+  const CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, prefer, range, accept-profile, content-profile, x-supabase-api-version, x-retry-count',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
+    'Access-Control-Expose-Headers': 'content-range',
+  };
+  const send = (res, status, body, headers = {}) => {
+    const isObj = body !== null && typeof body === 'object';
+    res.writeHead(status, { ...CORS, ...(isObj ? { 'Content-Type': 'application/json' } : {}), ...headers });
+    res.end(status === 204 ? undefined : isObj ? JSON.stringify(body) : body);
+  };
+  const readBody = (req) => new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve({}); } });
+  });
+  const bearerUser = (req) => {
+    const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
+    const userId = m && db.sessions.get(m[1]);
+    return userId ? [...db.users.values()].find((u) => u.id === userId) : null;
+  };
+
+  // ------------------------------------------------------------------ GoTrue mínimo
+  const userJson = (u) => ({ id: u.id, aud: 'authenticated', role: 'authenticated', email: u.email, email_confirmed_at: new Date().toISOString(), app_metadata: {}, user_metadata: { full_name: u.name }, created_at: new Date().toISOString() });
+  const sessionFor = (u) => {
+    const access = fakeJwt(u.id);
+    db.sessions.set(access, u.id);
+    const refresh = randomUUID();
+    db.sessions.set(`refresh:${refresh}`, u.id);
+    return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: refresh, user: userJson(u) };
+  };
+  const authErr = (res, status, code, msg) => send(res, status, { code: status, error_code: code, msg });
+
+  async function auth(req, res, url) {
+    const path = url.pathname.replace('/auth/v1', '');
+    const body = req.method === 'GET' ? {} : await readBody(req);
+    if (path === '/token' && url.searchParams.get('grant_type') === 'password') {
+      const u = db.users.get(String(body.email).toLowerCase());
+      if (!u || u.password !== body.password) return authErr(res, 400, 'invalid_credentials', 'Invalid login credentials');
+      return send(res, 200, sessionFor(u));
+    }
+    if (path === '/token' && url.searchParams.get('grant_type') === 'refresh_token') {
+      const id = db.sessions.get(`refresh:${body.refresh_token}`);
+      const u = [...db.users.values()].find((x) => x.id === id);
+      return u ? send(res, 200, sessionFor(u)) : authErr(res, 400, 'refresh_token_not_found', 'Invalid Refresh Token');
+    }
+    if (path === '/signup') {
+      const email = String(body.email || '').toLowerCase();
+      if (db.users.has(email)) return authErr(res, 422, 'user_already_exists', 'User already registered');
+      if (String(body.password || '').length < 6) return authErr(res, 422, 'weak_password', 'Password should be at least 6 characters');
+      const u = { id: randomUUID(), email, password: body.password, name: body.data?.full_name || '', role: 'user' };
+      db.users.set(email, u);
+      return send(res, 200, db.behavior.confirmEmail ? userJson(u) : sessionFor(u));
+    }
+    if (path === '/user' && req.method === 'GET') {
+      const u = bearerUser(req);
+      return u ? send(res, 200, userJson(u)) : authErr(res, 401, 'bad_jwt', 'invalid JWT');
+    }
+    if (path === '/user' && req.method === 'PUT') {
+      const u = bearerUser(req);
+      if (!u) return authErr(res, 401, 'bad_jwt', 'invalid JWT');
+      if (body.password) u.password = body.password;
+      return send(res, 200, userJson(u));
+    }
+    if (path === '/logout') { const m = /^Bearer (.+)$/.exec(req.headers.authorization || ''); if (m) db.sessions.delete(m[1]); return send(res, 204); }
+    if (path === '/recover') { db.recoveries.push(body.email); return send(res, 200, {}); }
+    return authErr(res, 404, 'not_found', 'not found');
+  }
+
+  // ------------------------------------------------------------------ PostgREST mínimo
+  const coerce = (v) => (v === 'true' ? true : v === 'false' ? false : v === 'null' ? null : v !== '' && !Number.isNaN(Number(v)) && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v);
+  function applyFilters(rows, params) {
+    let out = rows;
+    for (const [key, val] of params) {
+      if (['select', 'order', 'limit', 'offset'].includes(key)) continue;
+      const m = /^(eq|gt|is)\.(.*)$/.exec(val);
+      if (!m) continue;
+      const want = coerce(m[2]);
+      out = out.filter((r) => (m[1] === 'eq' || m[1] === 'is' ? r[key] === want : Number(r[key]) > Number(want)));
+    }
+    const order = params.get('order');
+    if (order) {
+      const keys = order.split(',').map((o) => { const [col, dir] = o.split('.'); return [col, dir === 'desc' ? -1 : 1]; });
+      out = [...out].sort((a, b) => {
+        for (const [col, dir] of keys) { if (a[col] === b[col]) continue; if (a[col] == null) return 1; if (b[col] == null) return -1; return (a[col] > b[col] ? 1 : -1) * dir; }
+        return 0;
+      });
+    }
+    return params.get('limit') ? out.slice(0, Number(params.get('limit'))) : out;
+  }
+  const pick = (row, cols) => Object.fromEntries(cols.map((c) => [c, row[c]]));
+  const classPublic = (c) => { const { bunny_video_id, bunny_library_id, ...rest } = c; return rest; };
+
+  async function rest(req, res, url) {
+    const table = url.pathname.replace('/rest/v1/', '');
+    const p = url.searchParams;
+    const user = bearerUser(req);
+    const wantsObject = (req.headers.accept || '').includes('vnd.pgrst.object');
+    const reply = (rows) => {
+      if (wantsObject) return rows.length === 1 ? send(res, 200, rows[0]) : send(res, 406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' });
+      return send(res, 200, rows);
+    };
+
+    if (table === 'rpc/save_progress' && req.method === 'POST') {
+      if (!user) return send(res, 401, { code: 'PGRST301', message: 'JWT required' });
+      if (db.behavior.saveFail) return send(res, 503, { message: 'unavailable' });
+      const { p_class_id: classId, p_seconds: seconds } = await readBody(req);
+      const c = db.classes.find((x) => x.id === classId);
+      if (!c || !canAccess(user, c)) return send(res, 403, { code: '42501', message: 'forbidden' });
+      const clamped = Math.max(0, Math.min(Number(seconds), c.duration_seconds ?? Number(seconds)));
+      const key = `${user.id}|${classId}`;
+      const prev = db.progress.get(key);
+      const completed = Boolean(prev?.completed) || (c.duration_seconds != null && clamped >= c.duration_seconds * 0.95);
+      const row = { user_id: user.id, class_id: classId, progress_seconds: clamped, completed, last_watched_at: new Date().toISOString() };
+      db.progress.set(key, row);
+      db.log.saves.push({ userId: user.id, classId, seconds: clamped, at: Date.now() });
+      return send(res, 200, row);
+    }
+
+    if (table === 'classes' && req.method === 'GET') {
+      const select = (p.get('select') || '*');
+      if (select === '*' || PRIVATE_COLS.some((c) => select.includes(c))) return send(res, 401, { code: '42501', message: 'permission denied for table classes' });
+      if (db.behavior.catalogLatencyMs) await new Promise((r) => setTimeout(r, db.behavior.catalogLatencyMs));
+      if (db.behavior.catalogFail) return send(res, 503, { message: 'Service Unavailable' });
+      const cols = select.split(',');
+      const visible = db.classes.filter((c) => c.is_published).map(classPublic); // RLS: solo publicadas
+      return reply(applyFilters(visible, p).map((r) => pick(r, cols)));
+    }
+
+    if (table === 'profiles' && req.method === 'GET') {
+      if (!user) return send(res, 200, []);
+      const cols = (p.get('select') || 'display_name').split(',');
+      return reply(applyFilters([{ id: user.id, display_name: user.name || null, role: user.role }], p).map((r) => pick(r, cols)));
+    }
+    if (table === 'profiles' && req.method === 'PATCH') {
+      if (!user) return send(res, 401, { code: 'PGRST301', message: 'JWT required' });
+      const patch = await readBody(req);
+      if ('role' in patch) return send(res, 403, { code: '42501', message: 'permission denied for table profiles' });
+      user.name = patch.display_name ?? '';
+      return send(res, 204);
+    }
+
+    if (table === 'video_progress' && req.method === 'GET') {
+      if (!user) return send(res, 200, []);
+      const mine = [...db.progress.values()].filter((r) => r.user_id === user.id);
+      const select = p.get('select') || '';
+      const embed = /classes\(([^)]*)\)/.exec(select);
+      const baseCols = select.replace(/,?classes\([^)]*\)/, '').split(',').filter(Boolean);
+      let rows = applyFilters(mine, p).map((r) => ({
+        ...pick(r, baseCols),
+        ...(embed ? { classes: (() => { const c = db.classes.find((x) => x.id === r.class_id && x.is_published); return c ? pick(classPublic(c), embed[1].split(',')) : null; })() } : {}),
+      }));
+      return reply(rows);
+    }
+    return send(res, 404, { message: `relation ${table} not found` });
+  }
+
+  function canAccess(user, c) {
+    if (user.role === 'admin') return true;
+    if (!c.is_published || c.video_status !== 'ready') return false;
+    return c.access_level === 'free' || db.entitlements.has(`${user.id}|${c.id}`);
+  }
+
+  // ------------------------------------------------------------------ Edge Function: contrato de `playback`
+  async function playback(req, res) {
+    const fail = (status, code, message) => send(res, status, { error: { code, message } });
+    const user = bearerUser(req);
+    if (!user) return fail(401, 'unauthenticated', 'Invalid or expired session');
+    const { class_id: classId } = await readBody(req);
+    db.log.playbackCalls.push({ at: Date.now(), classId, userId: user.id });
+    const force = db.behavior.playbackForce;
+    if (force) return fail(force.status, force.code, force.code);
+    const c = db.classes.find((x) => x.id === classId);
+    if (!c || !canAccess(user, c)) return fail(403, 'no_access', "You don't have access to this class");
+    const ttl = db.behavior.firstTtl != null ? db.behavior.firstTtl : db.behavior.playbackTtl;
+    db.behavior.firstTtl = null; // de un solo uso
+    const expiresAt = Math.floor(Date.now() / 1000) + ttl;
+    const tokenPath = `/${c.bunny_video_id}/`;
+    const token = `HS256-${createHmac('sha256', TOKEN_KEY).update(`${tokenPath}${expiresAt}token_path=${tokenPath}`).digest('base64url')}`;
+    const prog = db.progress.get(`${user.id}|${c.id}`);
+    const s = prog?.progress_seconds ?? 0;
+    const finished = c.duration_seconds != null && s >= c.duration_seconds * 0.95;
+    return send(res, 200, {
+      class_id: c.id, title: c.title, duration_seconds: c.duration_seconds,
+      hls_url: `${origin.cdn}/bcdn_token=${token}&token_path=${encodeURIComponent(tokenPath)}&expires=${expiresAt}${tokenPath}playlist.m3u8`,
+      expires_at: expiresAt, resume_seconds: s < 5 || finished ? 0 : s, completed: prog?.completed ?? false,
+    });
+  }
+
+  // ------------------------------------------------------------------ servidores
+  const api = http.createServer(async (req, res) => {
+    const url = new URL(req.url, origin.api);
+    if (req.method === 'OPTIONS') return send(res, 204);
+    try {
+      if (url.pathname === '/__test/reset') { db = seed(); return send(res, 200, { ok: true }); }
+      if (url.pathname === '/__test/behavior') { Object.assign(db.behavior, await readBody(req)); return send(res, 200, db.behavior); }
+      if (url.pathname === '/__test/state') return send(res, 200, { log: db.log, progress: [...db.progress.values()], recoveries: db.recoveries, users: [...db.users.values()].map((u) => ({ email: u.email, name: u.name })) });
+      if (url.pathname === '/__test/entitle') { const b = await readBody(req); db.entitlements.add(`${[...db.users.values()].find((u) => u.email === b.email)?.id}|${b.classId}`); return send(res, 200, { ok: true }); }
+      if (url.pathname.startsWith('/auth/v1/')) return await auth(req, res, url);
+      if (url.pathname.startsWith('/rest/v1/')) return await rest(req, res, url);
+      if (url.pathname === '/functions/v1/playback') return await playback(req, res);
+      return send(res, 404, { message: 'not found' });
+    } catch (e) { console.error('[fake-backend]', e); return send(res, 500, { message: String(e) }); }
+  });
+
+  // CDN estilo Bunny: el token viaja en la ruta y se hereda en los segmentos relativos.
+  const cdn = http.createServer((req, res) => {
+    const record = (status, path) => db.log.cdn.push({ status, path: path.replace(/^\/bcdn_token=[^/]*/, '/<token>'), at: Date.now() });
+    const h = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (req.method === 'OPTIONS') { res.writeHead(204, h); return res.end(); }
+    const m = /^\/bcdn_token=([^&]+)&token_path=([^&]+)&expires=(\d+)(\/.*)$/.exec(req.url.split('?')[0]);
+    const deny = (why) => { record(403, req.url.split('?')[0]); res.writeHead(403, h); res.end(why); };
+    if (!m) return deny('token required');
+    const [, token, tokenPathEnc, expires, rest] = m;
+    const tokenPath = decodeURIComponent(tokenPathEnc);
+    const expected = `HS256-${createHmac('sha256', TOKEN_KEY).update(`${tokenPath}${expires}token_path=${tokenPath}`).digest('base64url')}`;
+    if (token !== expected) return deny('bad token');
+    if (Number(expires) < Math.floor(Date.now() / 1000)) return deny('expired');
+    if (!rest.startsWith(tokenPath)) return deny('path outside token scope');
+    if (db.behavior.cdnRejectAll) return deny('rejected by test');
+    const file = normalize(join(mediaDir, rest.slice(tokenPath.length)));
+    if (!file.startsWith(mediaDir) || !existsSync(file) || !statSync(file).isFile()) { record(404, rest); res.writeHead(404, h); return res.end(); }
+    record(200, rest);
+    res.writeHead(200, { ...h, 'Content-Type': MIME[extname(file)] || 'application/octet-stream', 'Content-Length': statSync(file).size });
+    createReadStream(file).pipe(res);
+  });
+
+  // Sitio estático: /js/config.js apunta al backend de pruebas.
+  const site = http.createServer((req, res) => {
+    const url = new URL(req.url, origin.site);
+    if (url.pathname === '/js/config.js') {
+      res.writeHead(200, { 'Content-Type': MIME['.js'] });
+      return res.end(`window.YOGAPOPUP_CONFIG = Object.freeze({ SUPABASE_URL: '${origin.api}', SUPABASE_ANON_KEY: 'e2e-anon-key', FUNCTIONS_URL: '${origin.api}/functions/v1', PRIVACY_URL: '', PROGRESS_INTERVAL_SECONDS: ${progressIntervalSeconds} });`);
+    }
+    let path = decodeURIComponent(url.pathname);
+    if (path.endsWith('/')) path += 'index.html';
+    const file = normalize(join(siteRoot, path));
+    if (!file.startsWith(siteRoot) || /(^|[\\/])\.(env|git)/.test(file) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404); return res.end('not found'); }
+    res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
+    createReadStream(file).pipe(res);
+  });
+
+  await Promise.all([[site, ports.site], [api, ports.api], [cdn, ports.cdn]].map(([s, port]) => new Promise((r) => s.listen(port, '127.0.0.1', r))));
+  const control = (path, body) => fetch(`${origin.api}/__test/${path}`, { method: 'POST', body: JSON.stringify(body || {}) }).then((r) => r.json());
+  return {
+    origin, IDS,
+    reset: () => control('reset'),
+    behavior: (b) => control('behavior', b),
+    entitle: (email, classId) => control('entitle', { email, classId }),
+    state: () => fetch(`${origin.api}/__test/state`).then((r) => r.json()),
+    close: () => Promise.all([site, api, cdn].map((s) => new Promise((r) => { s.closeAllConnections?.(); s.close(r); }))),
+  };
+}

@@ -1,5 +1,6 @@
 // deno-lint-ignore no-import-prefix -- especificador npm: en línea, válido en Supabase Edge Functions
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { THUMBNAIL_BUCKET, thumbnailPathFromUrl } from "./thumbnails.ts";
 import type { ClassRepo, ClassRow, NewClass, ProgressRow, VideoStatePatch } from "./ports.ts";
 
 /** Columnas que lee el backend. bunny_* solo son legibles con la service role. */
@@ -11,6 +12,7 @@ const CLASS_COLUMNS = "id,title,description,thumbnail_url,duration_seconds,level
  * Por eso vive solo en el backend y cada consulta filtra explícitamente por usuario/clase.
  */
 export function createSupabaseRepo(url: string, serviceRoleKey: string): ClassRepo {
+  const supabaseUrl = url;
   const db: SupabaseClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -50,6 +52,24 @@ export function createSupabaseRepo(url: string, serviceRoleKey: string): ClassRe
         .maybeSingle();
       if (error) fail("attachVideo", error);
       return (data as ClassRow | null) ?? null;
+    },
+
+    async replaceFailedVideo(classId, video) {
+      const { data, error } = await db.from("classes")
+        .update({ ...video, video_status: "pending", duration_seconds: null })
+        .eq("id", classId)
+        .eq("video_status", "failed")
+        .select(CLASS_COLUMNS)
+        .maybeSingle();
+      if (error) fail("replaceFailedVideo", error);
+      return (data as ClassRow | null) ?? null;
+    },
+
+    async deleteThumbnail(url) {
+      const path = thumbnailPathFromUrl(url, supabaseUrl);
+      if (!path) return;
+      const { error } = await db.storage.from(THUMBNAIL_BUCKET).remove([path]);
+      if (error) console.error("[storage] could not delete thumbnail:", error.message);
     },
 
     async updateVideoState(classId, patch: VideoStatePatch) {

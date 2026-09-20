@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videoteca · Yoga Pop Up</title>
+  <meta name="description" content="Clases de yoga en video para practicar cuando quieras, a tu ritmo.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="css/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="css/vendor/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+  <link href="css/app.css" rel="stylesheet">
+</head>
+<body>
+<header id="siteHeader"></header>
+<main id="main">
+  <section class="page-hero">
+    <div class="container-xl">
+      <h1>Videoteca</h1>
+      <p>Clases de yoga en video para practicar cuando quieras, a tu ritmo. Inicia sesión para guardar tu progreso y retomar donde lo dejaste.</p>
+      <div class="yp-filters" id="catalogFilters" hidden></div>
+    </div>
+  </section>
+  <section class="section pt-0">
+    <div class="container-xl">
+      <div id="continueBlock" hidden></div>
+      <div id="catalogGrid" aria-live="polite"></div>
+      <noscript><p class="text-muted">Activa JavaScript para ver la videoteca.</p></noscript>
+    </div>
+  </section>
+</main>
+
+<footer id="siteFooter"></footer>
+<script src="js/vendor/bootstrap.bundle.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/vendor/supabase.js"></script>
+<script type="module" src="js/pages/videoteca.js"></script>
+</body>
+</html>

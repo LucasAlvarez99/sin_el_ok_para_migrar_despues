@@ -118,19 +118,34 @@ export class FakeRepo implements ClassRepo {
 
   insertClass(input: NewClass): Promise<ClassRow> {
     if (this.failInsert) return Promise.reject(new Error("db down"));
-    return Promise.resolve(this.addClass({ ...input }));
+    return Promise.resolve({ ...this.addClass({ ...input }) });
   }
   getClass(id: string) {
-    return Promise.resolve(this.classes.get(id) ?? null);
+    const c = this.classes.get(id);
+    return Promise.resolve(c ? { ...c } : null);
   }
   getClassByBunnyVideoId(v: string) {
-    return Promise.resolve([...this.classes.values()].find((c) => c.bunny_video_id === v) ?? null);
+    const c = [...this.classes.values()].find((c) => c.bunny_video_id === v);
+    return Promise.resolve(c ? { ...c } : null);
   }
   attachVideo(classId: string, video: { bunny_video_id: string; bunny_library_id: string }) {
     const c = this.classes.get(classId);
     if (!c || c.bunny_video_id) return Promise.resolve(null);
     Object.assign(c, video, { video_status: "pending", duration_seconds: null });
-    return Promise.resolve(c);
+    return Promise.resolve({ ...c });
+  }
+  replaceFailedVideo(classId: string, video: { bunny_video_id: string; bunny_library_id: string }) {
+    const c = this.classes.get(classId);
+    if (!c || c.video_status !== "failed") return Promise.resolve(null);
+    Object.assign(c, video, { video_status: "pending", duration_seconds: null });
+    return Promise.resolve({ ...c });
+  }
+  deletedThumbnails: (string | null)[] = [];
+  failThumbnailDelete = false;
+  deleteThumbnail(url: string | null) {
+    if (this.failThumbnailDelete) return Promise.reject(new Error("storage down"));
+    this.deletedThumbnails.push(url);
+    return Promise.resolve();
   }
   updateVideoState(classId: string, patch: VideoStatePatch) {
     const c = this.classes.get(classId)!;
@@ -140,7 +155,7 @@ export class FakeRepo implements ClassRepo {
       return Promise.reject(new Error("violates check constraint classes_published_requires_ready"));
     }
     Object.assign(c, patch);
-    return Promise.resolve(c);
+    return Promise.resolve({ ...c });
   }
   deleteClass(id: string) {
     this.deleteCalls++;

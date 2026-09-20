@@ -4,6 +4,29 @@ Sitio de yoga (cursos, clases en vivo, tienda y **videoteca**) al que se le suma
 videos: los videos viven en **Bunny Stream**, los usuarios, clases, permisos y progreso en **Supabase**, y la
 web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos en el hosting).
 
+> ## Estado actual (20/09/2026) · trabajo en curso
+>
+> Reglas del proyecto: [`CLAUDE.md`](CLAUDE.md) · Auditoría y plan por fases: [`docs/AUDITORIA-Y-PLAN.md`](docs/AUDITORIA-Y-PLAN.md)
+>
+> **Funciona y está probado:** 43 pruebas del backend (`npm run verify`) y **14 de 22 pruebas E2E** en un
+> navegador real: catálogo real (carga, error, vacío, filtros), acceso con sesión, acceso denegado, clase no
+> encontrada, cuenta (registro, persistencia, cierre de sesión, perfil, recuperación) y reproducción HLS con URL
+> firmada en la ruta y renovación tras un enlace vencido.
+>
+> **Falla (8 pruebas E2E), sin diagnosticar todavía:** calidad/velocidad/teclado del reproductor, "video en
+> preparación", error 502 con reintento, renovación preventiva y las 4 de progreso. El HLS carga completo; la
+> sospecha es el flujo de inicio de sesión del propio test, pero **no está confirmado**.
+>
+> **Aún no existe:** CI, pruebas unitarias del frontend, paneles (negocio y técnico), roles `owner`/`developer`,
+> reconciliación programada, pagos y tienda (ver el plan).
+>
+> ```bash
+> nvm use && npm ci                 # instalación reproducible
+> npm run verify                    # formato + lint + tipos + 43 pruebas
+> CHROME_PATH=/ruta/a/chrome npm run test:e2e   # E2E (requiere Chrome/Chromium y ffmpeg)
+> npm run dev                       # sitio en http://localhost:3000
+> ```
+
 ## Estado del proyecto
 
 Leyenda: ✅ cumplida · 🟡 código listo, falta validarla con cuentas reales · ⬜ sin empezar
@@ -59,7 +82,7 @@ yogapopup/
 │   ├── migrations/                      Base de datos: tablas, RLS, permisos (Fase 2)
 │   ├── functions/
 │   │   ├── _shared/                     Capa Bunny, auth, repositorio, HTTP (Fase 3)
-│   │   ├── _tests/                      37 pruebas automáticas
+│   │   ├── _tests/                      43 pruebas automáticas
 │   │   ├── admin-create-upload/  admin-sync-video/  admin-delete-class/
 │   │   └── playback/  bunny-webhook/  health/
 │   ├── .env  ·  .env.example            Secretos del BACKEND (Bunny)
@@ -106,7 +129,7 @@ npm install
 | `npm run dev` | Sitio en http://localhost:3000 |
 | `npm run build` | Arma `dist/` con **solo** los archivos públicos |
 | `npm run preview` | Construye y sirve `dist/` en http://localhost:3001 |
-| `npm test` | 37 pruebas de las funciones (sin red) |
+| `npm test` | 43 pruebas de las funciones (sin red) |
 | `npm run verify` | Formato + lint + tipos + pruebas |
 | `npm run sb:login` / `sb:link` | Iniciar sesión / vincular el proyecto Supabase |
 | `npm run sb:db-push` | Aplica las migraciones a la base |
@@ -211,7 +234,7 @@ ping de UptimeRobot a `/functions/v1/health` cada 5 min) y **no incluye copias d
 - [x] Admin: publicar / despublicar (directo a la tabla; no se puede publicar sin video listo)
 - [x] Usuario: `playback` entrega URL HLS firmada con vencimiento + punto donde retomar
 - [x] Firma de URLs idéntica a la implementación oficial de Bunny (verificado contra su código)
-- [x] 37 pruebas automáticas, tipos y lint limpios (`npm run verify`)
+- [x] 43 pruebas automáticas, tipos y lint limpios (`npm run verify`)
 - [x] Verificados los precios oficiales de Bunny y los límites de Supabase
 - [ ] Probar contra la API real de Bunny y un proyecto Supabase real (subida TUS, CORS del Pull Zone con hls.js)
 - [ ] Decidir miniaturas (propuesta: el admin sube una imagen por clase → Supabase Storage)

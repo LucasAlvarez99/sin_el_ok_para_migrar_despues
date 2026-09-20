@@ -4,4 +4,3 @@ supabase/.env
 node_modules/
 dist/
 supabase/.temp/
-deno.lock

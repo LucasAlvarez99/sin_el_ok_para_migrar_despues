@@ -67,7 +67,14 @@ export interface ClassRepo {
     classId: string,
     video: { bunny_video_id: string; bunny_library_id: string },
   ): Promise<ClassRow | null>;
+  /** Reemplaza el video de una clase cuyo video quedó en "failed". Devuelve null si ya no está en ese estado. */
+  replaceFailedVideo(
+    classId: string,
+    video: { bunny_video_id: string; bunny_library_id: string },
+  ): Promise<ClassRow | null>;
   updateVideoState(classId: string, patch: VideoStatePatch): Promise<ClassRow>;
+  /** Borra (mejor esfuerzo) la miniatura de Storage si la URL es de nuestro bucket. */
+  deleteThumbnail(url: string | null): Promise<void>;
   deleteClass(id: string): Promise<void>;
   getProgress(userId: string, classId: string): Promise<ProgressRow | null>;
   ping(): Promise<void>;
