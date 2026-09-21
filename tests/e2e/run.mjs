@@ -52,6 +52,11 @@ async function newPage() {
   return page;
 }
 const waitFor = (page, fn, arg, timeout = 15000) => page.waitForFunction(fn, { timeout, polling: 100 }, arg);
+// Bootstrap ignora clics y cierres mientras el modal se anima (~300 ms). Se espera a que termine de abrirse.
+const modalReady = (page) => waitFor(page, () => {
+  const d = document.querySelector('.yp-auth .modal-dialog');
+  return !!d && !!document.querySelector('.yp-auth.show') && /^(none|matrix\(1, 0, 0, 1, 0, 0\))$/.test(getComputedStyle(d).transform);
+}, null, 5000);
 const count = (page, sel) => page.$$eval(sel, (n) => n.length);
 const text = (page, sel) => page.$eval(sel, (n) => n.textContent.trim());
 const videoTime = (page) => page.$eval('.yp-video', (v) => v.currentTime);
@@ -63,6 +68,7 @@ async function signup(email, name = 'Ana Test') {
 async function loginViaModal(page, email, password = PASS) {
   await page.click('[data-account-toggle]');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.type('#authEmail', email);
   await page.type('#authPass', password);
   await page.click('.yp-auth button[type=submit]');
@@ -93,6 +99,8 @@ async function test(name, fn) {
   } catch (err) {
     results.push({ name, ok: false, err });
     console.log(`  ✗ ${name}\n      ${String(err.message).split('\n').join('\n      ')}`);
+    const where = String(err.stack || '').split('\n').find((l) => l.includes('run.mjs'));
+    if (where) console.log(`      en ${where.trim().replace(/^at /, '').replace(root, '')}`);
     if (page.errors.length) console.log(`      (errores de la página: ${page.errors.join(' | ').slice(0, 400)})`);
     await page.screenshot({ path: `/tmp/e2e-fail-${results.length}.png` }).catch(() => {});
   } finally {
@@ -165,6 +173,7 @@ await test('clase (sin sesión): pide iniciar sesión; un error de contraseña s
 
   await page.click('.clase-gate button');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.type('#authEmail', 'ana@test.dev');
   await page.type('#authPass', 'contraseña-equivocada');
   await page.click('.yp-auth button[type=submit]');
@@ -381,6 +390,7 @@ await test('cuenta: registro, sesión persistente tras recargar, menú y cierre 
   await page.goto(S);
   await page.click('[data-account-toggle]');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.evaluate(() => [...document.querySelectorAll('.yp-tab')].find((b) => b.textContent === 'Crear cuenta').click());
   await page.waitForSelector('#authName', { visible: true });
   await page.type('#authName', 'Lucía Prueba');
@@ -412,6 +422,7 @@ await test('cuenta: registro que exige confirmar el correo, y recuperación de c
   await page.goto(S);
   await page.click('[data-account-toggle]');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.evaluate(() => [...document.querySelectorAll('.yp-tab')].find((b) => b.textContent === 'Crear cuenta').click());
   await page.type('#authName', 'Nuevo');
   await page.type('#authEmail', 'nuevo@test.dev');
@@ -420,10 +431,11 @@ await test('cuenta: registro que exige confirmar el correo, y recuperación de c
   await waitFor(page, () => /Revisá tu correo|Revisa tu correo/.test(document.querySelector('.yp-auth .modal-title').textContent));
   assert.match(await text(page, '.yp-auth-note'), /nuevo@test\.dev/);
   await page.click('.yp-auth [data-bs-dismiss=modal].btn');
-  await new Promise((r) => setTimeout(r, 500));
+  await waitFor(page, () => !document.querySelector('.modal-backdrop, .modal.show'), null, 5000); // cierre completo, no un tiempo fijo
 
   await page.click('[data-account-toggle]');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.evaluate(() => [...document.querySelectorAll('.yp-link')].find((b) => /Olvidaste/.test(b.textContent)).click());
   await page.waitForSelector('#authEmail');
   await page.type('#authEmail', 'ana@test.dev');
@@ -439,6 +451,7 @@ await test('recuperación: el enlace del correo abre "contraseña nueva", la gua
   const tok = await r.json();
   await page.goto(`${S}/index.html#access_token=${tok.access_token}&refresh_token=${tok.refresh_token}&expires_in=3600&token_type=bearer&type=recovery`);
   await waitFor(page, () => /contraseña nueva/i.test(document.querySelector('.yp-auth .modal-title')?.textContent || ''), null, 10000);
+  await modalReady(page);
   await page.type('#authPass', 'corta');
   await page.click('.yp-auth button[type=submit]');
   await page.waitForSelector('.yp-form-error');
@@ -461,6 +474,7 @@ await test('cuenta: editar el nombre y cambiar la contraseña', async (page) => 
   await page.waitForSelector('.yp-state button');
   await page.click('.yp-state button');
   await page.waitForSelector('#authEmail', { visible: true });
+  await modalReady(page);
   await page.type('#authEmail', 'ana@test.dev');
   await page.type('#authPass', PASS);
   await page.click('.yp-auth button[type=submit]');

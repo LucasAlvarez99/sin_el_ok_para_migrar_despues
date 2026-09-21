@@ -9,14 +9,12 @@ web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos 
 > Reglas del proyecto: [`CLAUDE.md`](CLAUDE.md) · Encargo original: [`docs/ENCARGO-ORIGINAL.md`](docs/ENCARGO-ORIGINAL.md) ·
 > Auditoría y plan por fases: [`docs/AUDITORIA-Y-PLAN.md`](docs/AUDITORIA-Y-PLAN.md)
 >
-> **Probado:** 46 pruebas de backend · 16 unitarias del frontend · **22 de 24 pruebas E2E** en Chromium real
-> (catálogo, acceso, reproducción HLS con URL firmada, URL expirada, progreso, cuenta).
+> **Probado:** 46 pruebas de backend · 16 unitarias del frontend · **24 pruebas E2E en Chromium real, todas en verde**
+> (catálogo, acceso, reproducción HLS con URL firmada, URL expirada, progreso, cuenta y **recuperación de contraseña
+> de punta a punta**: el enlace del correo abre el formulario, guarda la contraseña nueva, la vieja deja de servir).
 >
-> **Abierto (2 pruebas E2E en rojo, ambas de recuperación de contraseña):**
-> 1. "recuperación: el enlace del correo…": corregí un bug real (`js/lib/session.js` se suscribía a los eventos de
->    Supabase demasiado tarde y el enlace del correo no abría el formulario de contraseña nueva), pero la prueba
->    todavía no pasa, así que **el arreglo no está confirmado de punta a punta**.
-> 2. "registro que exige confirmar el correo": pasaba antes y ahora falla al reabrir el modal; sin diagnosticar.
+> La recuperación se probó contra un backend local que habla el mismo protocolo que Supabase, **no** contra un
+> Supabase ni un correo reales. Para producción ver "Recuperación de contraseña" en [`supabase/README.md`](supabase/README.md).
 >
 > **Aún no existe:** paneles (negocio y técnico), roles `owner`/`developer`, reconciliación programada, pagos y tienda.
 >

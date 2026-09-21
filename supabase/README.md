@@ -83,3 +83,22 @@ Las pruebas viven en `supabase/functions/_tests/` y simulan Bunny y la base en m
 cubren (se valida con el primer video real, Fase 8): la API real de Bunny, la subida TUS desde el
 navegador, CORS del Pull Zone con hls.js, y los adaptadores `repo.supabase.ts` / `auth.supabase.ts`
 contra un proyecto real.
+
+## Recuperación de contraseña en producción
+
+Las pruebas E2E confirman la interfaz y el flujo del enlace, pero el envío del correo depende de tu proyecto de
+Supabase. Antes de abrir el registro:
+
+1. **SMTP propio.** El correo integrado de Supabase está pensado solo para pruebas y tiene un límite de envíos muy
+   bajo. Configura un proveedor (Resend, Postmark, Mailgun, SendGrid…) en *Authentication → SMTP Settings*.
+2. **Registros del dominio** del remitente: SPF, DKIM y DMARC. Sin ellos Gmail/Outlook mandan el correo a spam.
+3. **URLs de redirección.** En *Authentication → URL Configuration* añade tu dominio como *Site URL* y en
+   *Redirect URLs* la página de inicio (`https://tudominio.com/index.html`): el enlace del correo vuelve ahí.
+   Si no está en la lista, Supabase ignora la redirección.
+4. **Caducidad del enlace.** Es corta por defecto (1 hora, ajustable en *Authentication → Email*). Si se pide varias
+   veces seguidas, Supabase limita la frecuencia (aprox. 1 por minuto por correo): la web muestra
+   "Demasiados intentos" en ese caso.
+5. **Plantilla del correo** en español (*Authentication → Email Templates*) y prueba real con un buzón tuyo.
+6. Revisa *Logs → Auth* en Supabase si "la web dice éxito pero no llega nada": la web siempre responde igual, exista
+   o no la cuenta, para no revelar qué correos están registrados.
+

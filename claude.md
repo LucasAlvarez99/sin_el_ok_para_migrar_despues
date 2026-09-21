@@ -108,6 +108,10 @@ npm run sb:db-push | sb:secrets | sb:deploy   # despliegue (ver supabase/README.
 - Al capturar un valor "anterior" de una fila, hacerlo **antes** de actualizarla (bug real detectado por las pruebas).
 - Las carpetas `_tests` y `_shared` empiezan con guion bajo para que el CLI de Supabase no las despliegue como funciones.
 - Un `.env` servido por un servidor estático queda público: publicar **solo** `dist/`.
+- Bootstrap ignora `show()`/`hide()` y los clics mientras un modal se anima (~300 ms): en las pruebas se espera a que
+  termine de abrirse (`modalReady`) y en el código se usa `closeModal()` y se espera `hidden` antes de reabrir.
+- `supabase-js` emite `PASSWORD_RECOVERY` durante su inicialización: hay que suscribirse a `onAuthStateChange`
+  **antes** de `getSession()`.
 - Con `package.json` en la raíz, Deno resuelve desde `node_modules`: los scripts pasan `--config supabase/functions/deno.json`.
 
 ## 8. Primera entrega (alcance actual)
@@ -116,8 +120,8 @@ Estado a 20/09/2026. Leyenda: [x] hecho y probado · [~] hecho, con algo pendien
 
 - [~] Reproducibilidad de npm/Deno: versiones exactas, `deno.lock` congelado, `.nvmrc` y CI escrito
   (**el CI todavía no se ejecutó en GitHub**)
-- [~] Autenticación en el frontend: registro, login, logout, sesión persistente, perfil, cambio de contraseña y
-  petición de recuperación probados en navegador; el cambio de contraseña desde el enlace del correo tiene su prueba E2E **en rojo** (ver README)
+- [x] Autenticación en el frontend: registro, login, logout, sesión persistente, perfil, cambio de contraseña y
+  recuperación por enlace del correo (E2E en verde; el bug del evento `PASSWORD_RECOVERY` se detecta con mutación)
 - [x] Catálogo real desde Supabase (carga, error, vacío y filtros)
 - [x] Página de detalle de clase (sin sesión, sin acceso, no encontrada, en preparación, error y reintento)
 - [x] Reproductor de un solo vídeo (HLS real con URL firmada en la ruta, calidades, velocidad, teclado, retomar)
