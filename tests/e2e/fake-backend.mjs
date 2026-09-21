@@ -208,7 +208,7 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
   }
 
   function canAccess(user, c) {
-    if (user.role === 'admin') return true;
+    if (user.role === 'owner' || user.role === 'developer') return true;
     if (!c.is_published || c.video_status !== 'ready') return false;
     return c.access_level === 'free' || db.entitlements.has(`${user.id}|${c.id}`);
   }
@@ -250,6 +250,8 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
       if (url.pathname === '/__test/entitle') { const b = await readBody(req); db.entitlements.add(`${[...db.users.values()].find((u) => u.email === b.email)?.id}|${b.classId}`); return send(res, 200, { ok: true }); }
       if (url.pathname.startsWith('/auth/v1/')) return await auth(req, res, url);
       if (url.pathname.startsWith('/rest/v1/')) return await rest(req, res, url);
+      if (url.pathname === '/functions/v1/health') return send(res, 200, { ok: true });
+      if (url.pathname === '/auth/v1/settings') return send(res, 200, { external: { email: true }, disable_signup: false, mailer_autoconfirm: false });
       if (url.pathname === '/functions/v1/playback') return await playback(req, res);
       return send(res, 404, { message: 'not found' });
     } catch (e) { console.error('[fake-backend]', e); return send(res, 500, { message: String(e) }); }

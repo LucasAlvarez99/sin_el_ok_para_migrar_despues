@@ -9,17 +9,26 @@ import type { HandlerDeps } from "../_shared/ports.ts";
  * reintentar y no quedan videos huérfanos ocupando (y cobrando) almacenamiento.
  */
 export function createHandler(deps: HandlerDeps) {
-  const { bunny, repo, auth, config } = deps;
+  const { bunny, repo, auth, audit, config } = deps;
 
   return createEndpoint({
     methods: ["POST"],
     allowedOrigins: config.allowedOrigins,
     run: async (req) => {
-      await auth.requireAdmin(req);
+      const actor = await auth.requireOwner(req);
       const classId = parseUuid((await readJson(req)).class_id, "class_id");
 
       const row = await repo.getClass(classId);
       if (!row) throw new HttpError(404, "class_not_found", "Class not found");
+
+      // Operación destructiva: primero se REGISTRA la intención; si no se puede auditar, no se borra nada.
+      await audit.record({
+        actorId: actor.id,
+        action: "class.delete",
+        entityType: "class",
+        entityId: row.id,
+        details: { title: row.title, had_video: row.bunny_video_id !== null, was_published: row.is_published },
+      });
 
       let videoDeleted = false;
       if (row.bunny_video_id) videoDeleted = await bunny.deleteVideo(row.bunny_video_id);

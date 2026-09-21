@@ -32,7 +32,7 @@ Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
 | 12 | Reintentos y reconciliación | 🟡 | Webhook + sincronización manual + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y huérfanos en Bunny |
 | 13 | Base para pagos y entitlements | 🟡 | `entitlements` y `can_access_class()` ✅; **sin altas/bajas por casos de uso ni auditoría** |
 | 14 | Tests unitarios, integración y E2E | 🟡 | 46 de backend (con contrato), 16 del frontend y 23 E2E; **faltan** integración entre módulos y contratos del resto |
-| 15 | Tres niveles de acceso | ⬜ | `role in ('user','admin')`; faltan `owner` y `developer`, y sus guardas |
+| 15 | Tres niveles de acceso | 🟡 | **Hecho y probado:** roles `user`/`owner`/`developer`, guardas `requireOwner`/`requireDeveloper`, cambios de rol solo por desarrolladores, historial de auditoría inmutable. **Falta:** las superficies (paneles `/panel` e `/interno`) |
 | 16 | Modularización con contratos | 🟡 | Patrón puertos/adaptadores en backend; **sin contratos formales, sin pruebas de contrato, sin regla anti-ciclos** |
 | 17 | Cobros digitales y físicos | ⬜ | Sin productos, pedidos, stock, envíos, devoluciones, proveedores ni webhooks de pago |
 
@@ -55,7 +55,7 @@ Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba
 - **Migraciones:** ninguna.
 - **Pruebas:** unitarias (`ProgressReporter`, formato, errores, configuración) y E2E en navegador real con backend simulado y HLS real: **carga, error, catálogo vacío, acceso denegado, video no listo, URL expirada con renovación, guardado de progreso y retomar**.
 
-### Fase 2 · Roles, modularización base y controles transversales
+### Fase 2 · Roles, modularización base y controles transversales  _(roles y auditoría: hechos · pendiente: rate limiting, idempotencia y contratos formales)_
 - **Archivos:** `supabase/functions/_modules/*` (contratos `index.ts`), `_modules/common` (rate limiting, idempotencia, auditoría), guardas `requireOwner/requireDeveloper`, regla anti-ciclos verificada en CI.
 - **Migración:** roles `user | owner | developer`; `is_owner()`, `is_developer()` (`is_admin()` queda como alias temporal); tabla `audit_log` (solo inserción); tabla `idempotency_keys`; contadores de `rate_limits`.
 - **Pruebas:** matriz de permisos por rol en SQL; pruebas de contrato de cada módulo; de "acceso denegado" por nivel; de rate limit e idempotencia.

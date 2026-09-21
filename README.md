@@ -6,22 +6,27 @@ web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos 
 
 > ## Estado actual (20/09/2026) · primera entrega casi cerrada
 >
+> **Poner el sitio a andar con cuentas reales:** [`docs/PUESTA-EN-MARCHA.md`](docs/PUESTA-EN-MARCHA.md) ·
 > Reglas del proyecto: [`CLAUDE.md`](CLAUDE.md) · Encargo original: [`docs/ENCARGO-ORIGINAL.md`](docs/ENCARGO-ORIGINAL.md) ·
 > Auditoría y plan por fases: [`docs/AUDITORIA-Y-PLAN.md`](docs/AUDITORIA-Y-PLAN.md)
 >
-> **Probado:** 46 pruebas de backend · 16 unitarias del frontend · **24 pruebas E2E en Chromium real, todas en verde**
-> (catálogo, acceso, reproducción HLS con URL firmada, URL expirada, progreso, cuenta y **recuperación de contraseña
-> de punta a punta**: el enlace del correo abre el formulario, guarda la contraseña nueva, la vieja deja de servir).
+> **Probado:** 53 pruebas de backend (roles, auditoría, contratos) · 26 unitarias del frontend y de `doctor` ·
+> **pruebas de base de datos** (`npm run test:db`: migraciones en orden, matriz de permisos por rol, historial inmutable,
+> verificadas rompiendo la migración a propósito) · **25 pruebas E2E** en Chromium real, todas en verde.
 >
-> La recuperación se probó contra un backend local que habla el mismo protocolo que Supabase, **no** contra un
-> Supabase ni un correo reales. Para producción ver "Recuperación de contraseña" en [`supabase/README.md`](supabase/README.md).
+> **Fase 4 (roles) hecha:** `user` / `owner` / `developer` (el desarrollador es superconjunto del propietario), historial de
+> auditoría que nadie puede editar ni borrar, cambios de rol solo por desarrolladores y protección del último desarrollador.
+> **Fase 2 (cuentas reales) preparada:** guía, `npm run doctor[:online]` y una prueba de integración real que se ejecuta
+> sola cuando existan las credenciales (`npm run test:integration`). **Falta que el cliente cree las cuentas.**
 >
-> **Aún no existe:** paneles (negocio y técnico), roles `owner`/`developer`, reconciliación programada, pagos y tienda.
+> **Aún no existe:** paneles de gestión (negocio y técnico), reconciliación programada, pagos y tienda.
 >
 > ```bash
 > nvm use && npm ci                              # instalación reproducible
-> npm run verify                                 # formato + lint + tipos + 46 pruebas de backend + 16 del frontend
-> CHROME_PATH=/ruta/a/chrome npm run test:e2e    # 24 pruebas E2E (requiere Chrome/Chromium y ffmpeg)
+> npm run verify                                 # formato + lint + tipos + pruebas de backend y frontend
+> npm run test:db                                # base de datos (requiere PostgreSQL y bash)
+> npm run doctor                                 # ¿la configuración está lista para producción?
+> CHROME_PATH=/ruta/a/chrome npm run test:e2e    # 25 pruebas E2E (requiere Chrome/Chromium y ffmpeg)
 > npm run dev                                    # sitio en http://localhost:3000
 > npm run build                                  # arma dist/ (lo único que se sube a Hostinger)
 > ```
@@ -85,7 +90,7 @@ yogapopup/
 │   │   ├── admin-create-upload/  admin-sync-video/  admin-delete-class/
 │   │   └── playback/  bunny-webhook/  health/
 │   ├── .env  ·  .env.example            Secretos del BACKEND (Bunny)
-│   ├── config.toml · promote_admin.example.sql · README.md
+│   ├── config.toml · promote_role.example.sql · README.md
 ├── scripts/                             supabase.mjs (atajos CLI) · build-site.mjs (arma dist/)
 ├── .env  ·  .env.example                Variables de las herramientas locales
 ├── .htaccess                            Bloquea archivos sensibles en Hostinger
@@ -276,7 +281,7 @@ ping de UptimeRobot a `/functions/v1/health` cada 5 min) y **no incluye copias d
 - [ ] Formulario: título, descripción, categoría, nivel, miniatura, video y estado
 - [ ] Subida del video con barra de progreso y espera de procesamiento
 - [ ] Editar · publicar · despublicar · eliminar
-- [ ] Acceso solo para administradores
+- [ ] Acceso solo para propietario y desarrolladores (rol `owner` o `developer`)
 
 - [ ] **FASE 7 CUMPLIDA**
 

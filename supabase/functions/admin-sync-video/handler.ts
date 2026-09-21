@@ -16,7 +16,7 @@ export function createHandler(deps: HandlerDeps) {
     methods: ["POST"],
     allowedOrigins: config.allowedOrigins,
     run: async (req) => {
-      await auth.requireAdmin(req);
+      await auth.requireOwner(req);
       const classId = parseUuid((await readJson(req)).class_id, "class_id");
 
       const row = await repo.getClass(classId);

@@ -14,7 +14,9 @@ let initPromise = null;
 
 export const getState = () => state;
 export const isLoggedIn = () => !!state.user;
-export const isAdmin = () => state.profile?.role === 'admin';
+/** Propietario o desarrollador (el desarrollador es superconjunto). Solo ordena la interfaz: el permiso real lo decide el servidor. */
+export const isOwner = () => state.profile?.role === 'owner' || state.profile?.role === 'developer';
+export const isDeveloper = () => state.profile?.role === 'developer';
 export const accessToken = () => state.session?.access_token ?? null;
 
 /** Suscribe un callback (state, event). Devuelve la función para cancelar. */

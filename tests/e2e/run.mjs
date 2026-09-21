@@ -8,6 +8,7 @@
  * Requiere ffmpeg (genera un video HLS de 12 s con 2 calidades).
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,6 +58,14 @@ const modalReady = (page) => waitFor(page, () => {
   const d = document.querySelector('.yp-auth .modal-dialog');
   return !!d && !!document.querySelector('.yp-auth.show') && /^(none|matrix\(1, 0, 0, 1, 0, 0\))$/.test(getComputedStyle(d).transform);
 }, null, 5000);
+/** Ejecuta un proceso SIN bloquear el bucle de eventos (el backend de pruebas vive en este mismo proceso). */
+const run = (args, env) => new Promise((resolve) => {
+  const child = spawn('node', args, { cwd: root, env });
+  let stdout = '';
+  child.stdout.on('data', (d) => (stdout += d));
+  child.stderr.on('data', (d) => (stdout += d));
+  child.on('close', (status) => resolve({ status, stdout }));
+});
 const count = (page, sel) => page.$$eval(sel, (n) => n.length);
 const text = (page, sel) => page.$eval(sel, (n) => n.textContent.trim());
 const videoTime = (page) => page.$eval('.yp-video', (v) => v.currentTime);
@@ -205,14 +214,17 @@ await test('reproductor: controles, calidades reales de HLS, velocidad y teclado
   await page.click('.yp-menuwrap:nth-child(1) .yp-text-btn');
   await page.evaluate(() => [...document.querySelectorAll('.yp-menu-item')].find((b) => b.textContent.includes('1.5')).click());
   assert.equal(await page.$eval('.yp-video', (v) => v.playbackRate), 1.5);
-  // teclado: espacio pausa, flechas buscan
+  // teclado: espacio pausa, flechas buscan. Se reposiciona a la mitad del video para no depender de cuánto
+  // tardaron los pasos anteriores (el video dura 12 s y a 1,5x podría haber terminado en una máquina lenta).
+  await page.evaluate(() => { const v = document.querySelector('.yp-video'); v.currentTime = 3; return v.play(); });
+  await waitFor(page, () => document.querySelector('.yp-video').currentTime > 3.3 && !document.querySelector('.yp-video').paused);
   await page.focus('.yp-player');
   await page.keyboard.press('Space');
   await waitFor(page, () => document.querySelector('.yp-video').paused);
   const t = await videoTime(page);
   await page.keyboard.press('ArrowLeft');
   await waitFor(page, (t0) => document.querySelector('.yp-video').currentTime < t0, t);
-  assert.equal(await page.$eval('.yp-player', (n) => n.dataset.state), 'paused');
+  await waitFor(page, () => document.querySelector('.yp-player').dataset.state === 'paused');
 });
 
 await test('acceso denegado: clase restringida sin permiso → mensaje claro; con permiso → reproduce', async (page) => {
@@ -487,6 +499,27 @@ await test('cuenta: editar el nombre y cambiar la contraseña', async (page) => 
 });
 
 // ============================================================ seguridad básica del frontend
+await test('doctor --online y la prueba de integración real funcionan (contra el backend simulado)', async () => {
+  await signup('ana@test.dev');
+  const env = {
+    ...process.env, YP_SUPABASE_URL: be.origin.api, YP_ANON_KEY: 'e2e-anon-key', YP_ORIGINS: be.origin.site,
+    YP_TEST_EMAIL: 'ana@test.dev', YP_TEST_PASSWORD: PASS, YP_CLASS_ID: IDS.free,
+  };
+  const doctor = await run(['scripts/doctor.mjs', '--online'], env);
+  assert.equal(doctor.status, 0, `doctor salió con ${doctor.status}:\n${doctor.stdout}`);
+  for (const frag of ['✓ Función health', '✓ Columnas de Bunny ocultas', '✓ playback sin sesión', '✓ Catálogo público']) {
+    assert.ok(doctor.stdout.includes(frag), `doctor no informó "${frag}":\n${doctor.stdout}`);
+  }
+  const integ = await run(['tests/integration/real-stack.integration.mjs'], env);
+  assert.equal(integ.status, 0, `la integración salió con ${integ.status}:\n${integ.stdout}`);
+  assert.match(integ.stdout, /Todo en verde/);
+  assert.equal((integ.stdout.match(/✓/g) || []).length, 9, integ.stdout);
+  // y el doctor SÍ detecta problemas: una clave secreta como clave pública -> error
+  const bad = await run(['scripts/doctor.mjs'], { ...env, YP_ANON_KEY: 'sb_secret_abc' });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stdout, /CLAVE SECRETA/);
+});
+
 await test('el HTML/JS servido no contiene secretos ni pide columnas privadas', async (page) => {
   const bad = [];
   page.on('response', async (r) => { if (r.status() === 401 && /rest\/v1\/classes/.test(r.url())) bad.push(r.url()); });

@@ -80,15 +80,22 @@ export interface ClassRepo {
   ping(): Promise<void>;
 }
 
+export type Role = "user" | "owner" | "developer";
+
 export interface AuthedUser {
   id: string;
+  /** Rol leído de la base (public.profiles) con la sesión del propio usuario. */
+  role: Role;
   /** Decide con public.can_access_class() ejecutada COMO el usuario (RLS/auth.uid() reales). */
   canAccessClass(classId: string): Promise<boolean>;
 }
 
 export interface AuthPort {
   requireUser(req: Request): Promise<AuthedUser>;
-  requireAdmin(req: Request): Promise<AuthedUser>;
+  /** Propietario o desarrollador (el desarrollador es superconjunto). 403 `owner_only` si no. */
+  requireOwner(req: Request): Promise<AuthedUser>;
+  /** Solo desarrolladores. 403 `developer_only` si no. */
+  requireDeveloper(req: Request): Promise<AuthedUser>;
 }
 
 export type BunnyPort = Pick<
@@ -110,9 +117,23 @@ export interface AppConfig {
   webhookSecret: string | null;
 }
 
+/** Historial de auditoría (solo inserción). Las operaciones destructivas fallan si no se puede registrar. */
+export interface AuditEntry {
+  actorId: string;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface AuditPort {
+  record(entry: AuditEntry): Promise<void>;
+}
+
 export interface HandlerDeps {
   bunny: BunnyPort;
   repo: ClassRepo;
   auth: AuthPort;
+  audit: AuditPort;
   config: AppConfig;
 }

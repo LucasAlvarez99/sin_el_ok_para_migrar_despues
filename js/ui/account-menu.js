@@ -7,7 +7,7 @@ import { toast } from './toast.js';
 /**
  * Activa el ícono "Mi cuenta" del encabezado ([data-account-toggle]):
  *  - sin sesión  -> abre el modal de acceso
- *  - con sesión  -> menú con la videoteca, el panel (solo admin) y cerrar sesión
+ *  - con sesión  -> menú con la videoteca, mi cuenta y cerrar sesión
  */
 let popover = null;
 
@@ -24,7 +24,8 @@ function open(anchor) {
   const items = [
     el('div', { class: 'yp-account-who' }, el('strong', {}, name), profile?.display_name ? el('small', {}, user.email) : null),
     el('a', { class: 'yp-account-item', href: page('videoteca.html'), role: 'menuitem' }, icon('collection-play'), 'Videoteca'),
-    session.isAdmin() ? el('a', { class: 'yp-account-item', href: page('admin/index.html'), role: 'menuitem' }, icon('sliders'), 'Panel de clases') : null,
+    // Los enlaces a los paneles (/panel para session.isOwner(), /interno para session.isDeveloper()) se añaden cuando
+    // esas páginas existan: no se muestra ningún enlace a una página que todavía no está.
     el('button', {
       type: 'button', class: 'yp-account-item', role: 'menuitem',
       onclick: async () => {

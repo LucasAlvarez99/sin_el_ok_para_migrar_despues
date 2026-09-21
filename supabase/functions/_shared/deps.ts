@@ -2,6 +2,7 @@ import { BunnyService } from "./bunny/bunny.service.ts";
 import { loadConfig } from "./config.ts";
 import { createSupabaseRepo } from "./repo.supabase.ts";
 import { createSupabaseAuth } from "./auth.supabase.ts";
+import { createSupabaseAudit } from "./audit.supabase.ts";
 import { json } from "./http.ts";
 import type { HandlerDeps } from "./ports.ts";
 
@@ -12,6 +13,7 @@ export function buildDeps(env: Record<string, string | undefined> = Deno.env.toO
     bunny: new BunnyService(cfg.bunny),
     repo: createSupabaseRepo(cfg.supabase.url, cfg.supabase.serviceRoleKey),
     auth: createSupabaseAuth(cfg.supabase.url, cfg.supabase.anonKey),
+    audit: createSupabaseAudit(cfg.supabase.url, cfg.supabase.serviceRoleKey),
     config: cfg.app,
   };
 }

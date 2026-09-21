@@ -3,6 +3,8 @@ import { BunnyService } from "../_shared/bunny/bunny.service.ts";
 import { HttpError } from "../_shared/http.ts";
 import type {
   AppConfig,
+  AuditEntry,
+  AuditPort,
   AuthedUser,
   AuthPort,
   ClassRepo,
@@ -10,6 +12,7 @@ import type {
   HandlerDeps,
   NewClass,
   ProgressRow,
+  Role,
   VideoStatePatch,
 } from "../_shared/ports.ts";
 
@@ -18,6 +21,7 @@ export const NOW = 1_800_000_000;
 export const ADMIN_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 export const USER_ID = "bbbbbbbb-0000-4000-8000-000000000002";
 export const USER2_ID = "cccccccc-0000-4000-8000-000000000003";
+export const DEV_ID = "dddddddd-0000-4000-8000-000000000004";
 
 // ------------------------------------------------------------------ Bunny (API HTTP simulada)
 interface FakeVideo {
@@ -174,38 +178,54 @@ export class FakeRepo implements ClassRepo {
 export class FakeAuth implements AuthPort {
   /** userId -> clases a las que tiene entitlement */
   entitlements = new Map<string, Set<string>>();
-  private tokens: Record<string, { id: string; admin: boolean }> = {
-    admin: { id: ADMIN_ID, admin: true },
-    user: { id: USER_ID, admin: false },
-    user2: { id: USER2_ID, admin: false },
+  private tokens: Record<string, { id: string; role: Role }> = {
+    owner: { id: ADMIN_ID, role: "owner" },
+    developer: { id: DEV_ID, role: "developer" },
+    user: { id: USER_ID, role: "user" },
+    user2: { id: USER2_ID, role: "user" },
   };
   constructor(private repo: FakeRepo) {}
 
-  private user(req: Request): { u: AuthedUser; admin: boolean } {
+  private user(req: Request): AuthedUser {
     const m = /^Bearer (.+)$/.exec(req.headers.get("authorization") ?? "");
     const t = m ? this.tokens[m[1]] : undefined;
     if (!t) throw new HttpError(401, "unauthenticated", "Invalid or expired session");
+    const isStaff = t.role === "owner" || t.role === "developer";
     return {
-      admin: t.admin,
-      u: {
-        id: t.id,
-        canAccessClass: (classId: string) => {
-          // Réplica de public.can_access_class() de la migración.
-          if (t.admin) return Promise.resolve(true);
-          const c = this.repo.classes.get(classId);
-          if (!c || !c.is_published || c.video_status !== "ready") return Promise.resolve(false);
-          return Promise.resolve(c.access_level === "free" || (this.entitlements.get(t.id)?.has(c.id) ?? false));
-        },
+      id: t.id,
+      role: t.role,
+      canAccessClass: (classId: string) => {
+        // Réplica de public.can_access_class() de la migración.
+        if (isStaff) return Promise.resolve(true);
+        const c = this.repo.classes.get(classId);
+        if (!c || !c.is_published || c.video_status !== "ready") return Promise.resolve(false);
+        return Promise.resolve(c.access_level === "free" || (this.entitlements.get(t.id)?.has(c.id) ?? false));
       },
     };
   }
   requireUser(req: Request) {
-    return Promise.resolve(this.user(req).u);
+    return Promise.resolve(this.user(req));
   }
-  requireAdmin(req: Request) {
-    const { u, admin } = this.user(req);
-    if (!admin) throw new HttpError(403, "admin_only", "Administrator access required");
+  requireOwner(req: Request) {
+    const u = this.user(req);
+    if (u.role !== "owner" && u.role !== "developer") throw new HttpError(403, "owner_only", "Owner access required");
     return Promise.resolve(u);
+  }
+  requireDeveloper(req: Request) {
+    const u = this.user(req);
+    if (u.role !== "developer") throw new HttpError(403, "developer_only", "Developer access required");
+    return Promise.resolve(u);
+  }
+}
+
+// ------------------------------------------------------------------ Auditoría en memoria
+export class FakeAudit implements AuditPort {
+  entries: AuditEntry[] = [];
+  fail = false;
+  record(entry: AuditEntry): Promise<void> {
+    if (this.fail) return Promise.reject(new Error("audit down"));
+    this.entries.push(entry);
+    return Promise.resolve();
   }
 }
 
@@ -214,6 +234,7 @@ export function makeDeps(over: Partial<AppConfig> = {}) {
   const api = new FakeBunnyApi();
   const repo = new FakeRepo();
   const auth = new FakeAuth(repo);
+  const audit = new FakeAudit();
   const bunny = makeBunny(api);
   const config: AppConfig = {
     allowedOrigins: ["https://yogapopup.test"],
@@ -222,8 +243,8 @@ export function makeDeps(over: Partial<AppConfig> = {}) {
     webhookSecret: "readonly-key",
     ...over,
   };
-  const deps: HandlerDeps = { bunny, repo, auth, config };
-  return { api, repo, auth, bunny, config, deps };
+  const deps: HandlerDeps = { bunny, repo, auth, audit, config };
+  return { api, repo, auth, audit, bunny, config, deps };
 }
 
 export function post(body: unknown, token?: string, extra: Record<string, string> = {}): Request {

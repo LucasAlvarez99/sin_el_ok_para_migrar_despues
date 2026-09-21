@@ -14,19 +14,32 @@ import { type ClassRow, type HandlerDeps, toPublicClass } from "../_shared/ports
  *      · processing/ready   -> 409, ya tiene un video en uso
  */
 export function createHandler(deps: HandlerDeps) {
-  const { bunny, repo, auth, config } = deps;
+  const { bunny, repo, auth, audit, config } = deps;
 
   return createEndpoint({
     methods: ["POST"],
     allowedOrigins: config.allowedOrigins,
     run: async (req) => {
-      const admin = await auth.requireAdmin(req);
+      const admin = await auth.requireOwner(req);
       const input = parseCreateClassInput(await readJson(req));
 
       const { row, resumed } = input.classId
         ? await prepareExistingClass(input.classId)
         : { row: await createNewClass(), resumed: false };
       const upload = await bunny.createUploadCredentials(row.bunny_video_id!, config.uploadTtlSeconds);
+
+      // Registro no destructivo: si falla se anota en el log, pero no se deshace lo ya creado.
+      try {
+        await audit.record({
+          actorId: admin.id,
+          action: resumed ? "class.upload_resumed" : "class.upload_prepared",
+          entityType: "class",
+          entityId: row.id,
+          details: { title: row.title },
+        });
+      } catch (e) {
+        console.error("[audit] no se pudo registrar class.upload:", e instanceof Error ? e.message : e);
+      }
       return { class: toPublicClass(row), upload, resumed };
 
       // ------------------------------------------------------------------ clase nueva

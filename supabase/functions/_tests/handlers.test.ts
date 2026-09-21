@@ -17,14 +17,14 @@ Deno.test("create-upload: sin sesión 401, usuario común 403, admin OK", async 
   assert.equal((await h(post({ title: "A" }))).status, 401);
   const r = await h(post({ title: "A" }, "user"));
   assert.equal(r.status, 403);
-  assert.equal(await errCode(r), "admin_only");
-  assert.equal((await h(post({ title: "A" }, "admin"))).status, 200);
+  assert.equal(await errCode(r), "owner_only");
+  assert.equal((await h(post({ title: "A" }, "owner"))).status, 200);
 });
 
 Deno.test("create-upload: crea clase + video en Bunny + credenciales; nunca expone ids ni la key", async () => {
   const { deps, api, repo } = makeDeps();
   const r = await createUpload(deps)(
-    post({ title: "  Yoga para principiantes ", level: "principiante", category: "Vinyasa", sort_order: 3 }, "admin"),
+    post({ title: "  Yoga para principiantes ", level: "principiante", category: "Vinyasa", sort_order: 3 }, "owner"),
   );
   assert.equal(r.status, 200);
   const text = await r.clone().text();
@@ -60,13 +60,13 @@ Deno.test("create-upload: validaciones de entrada (400) y nada llega a Bunny", a
       { title: "a", class_id: "no-uuid" },
     ]
   ) {
-    const r = await h(post(bad, "admin"));
+    const r = await h(post(bad, "owner"));
     assert.equal(r.status, 400, JSON.stringify(bad));
     assert.equal(await errCode(r), "invalid_input");
   }
-  assert.equal((await h(post("no es json", "admin"))).status, 400);
-  assert.equal((await h(post("[]", "admin"))).status, 400);
-  assert.equal((await h(post("x".repeat(20_000), "admin"))).status, 413);
+  assert.equal((await h(post("no es json", "owner"))).status, 400);
+  assert.equal((await h(post("[]", "owner"))).status, 400);
+  assert.equal((await h(post("x".repeat(20_000), "owner"))).status, 413);
   assert.equal(api.videos.size, 0);
   assert.equal(repo.classes.size, 0);
 });
@@ -74,7 +74,7 @@ Deno.test("create-upload: validaciones de entrada (400) y nada llega a Bunny", a
 Deno.test("create-upload: si falla la base se borra el video huérfano de Bunny", async () => {
   const { deps, api, repo } = makeDeps();
   repo.failInsert = true;
-  const r = await createUpload(deps)(post({ title: "A" }, "admin"));
+  const r = await createUpload(deps)(post({ title: "A" }, "owner"));
   assert.equal(r.status, 500);
   assert.equal(await errCode(r), "internal_error");
   assert.equal(api.videos.size, 0); // compensación
@@ -83,7 +83,7 @@ Deno.test("create-upload: si falla la base se borra el video huérfano de Bunny"
 Deno.test("create-upload: Bunny caído -> 502 y no se crea la clase", async () => {
   const { deps, api, repo } = makeDeps();
   api.failWith = { method: "POST", status: 503 };
-  const r = await createUpload(deps)(post({ title: "A" }, "admin"));
+  const r = await createUpload(deps)(post({ title: "A" }, "owner"));
   assert.equal(r.status, 502);
   assert.equal(await errCode(r), "video_provider_error");
   assert.equal(repo.classes.size, 0);
@@ -93,13 +93,13 @@ Deno.test("create-upload: asociar video a clase sin video; 404 si la clase no ex
   const { deps, repo, api } = makeDeps();
   const h = createUpload(deps);
   const c = repo.addClass({ title: "Existente" });
-  const ok = await h(post({ title: "ignorado", class_id: c.id }, "admin"));
+  const ok = await h(post({ title: "ignorado", class_id: c.id }, "owner"));
   assert.equal(ok.status, 200);
   const body = await ok.json();
   assert.equal(body.resumed, false);
   assert.ok(repo.classes.get(c.id)!.bunny_video_id);
   assert.equal(api.videos.size, 1);
-  assert.equal((await h(post({ title: "x", class_id: crypto.randomUUID() }, "admin"))).status, 404);
+  assert.equal((await h(post({ title: "x", class_id: crypto.randomUUID() }, "owner"))).status, 404);
 });
 
 Deno.test("create-upload: subida interrumpida (pending/uploading) se REANUDA con el mismo video", async () => {
@@ -109,7 +109,7 @@ Deno.test("create-upload: subida interrumpida (pending/uploading) se REANUDA con
     const v = await deps.bunny.createVideo("v");
     const c = repo.addClass({ bunny_video_id: v.guid, video_status: status });
     const before = api.videos.size;
-    const r = await h(post({ title: "x", class_id: c.id }, "admin"));
+    const r = await h(post({ title: "x", class_id: c.id }, "owner"));
     assert.equal(r.status, 200);
     const body = await r.json();
     assert.equal(body.resumed, true);
@@ -123,7 +123,7 @@ Deno.test("create-upload: video fallido se REEMPLAZA y se borra el viejo de Bunn
   const { deps, repo, api } = makeDeps();
   const old = await deps.bunny.createVideo("v");
   const c = repo.addClass({ bunny_video_id: old.guid, video_status: "failed" });
-  const r = await createUpload(deps)(post({ title: "x", class_id: c.id }, "admin"));
+  const r = await createUpload(deps)(post({ title: "x", class_id: c.id }, "owner"));
   assert.equal(r.status, 200);
   const body = await r.json();
   assert.notEqual(body.upload.videoId, old.guid);
@@ -140,7 +140,7 @@ Deno.test("create-upload: video en uso (processing/ready) -> 409 y no se crea na
     const v = await deps.bunny.createVideo("v");
     const c = repo.addClass({ bunny_video_id: v.guid, video_status: status });
     const before = api.videos.size;
-    const r = await h(post({ title: "x", class_id: c.id }, "admin"));
+    const r = await h(post({ title: "x", class_id: c.id }, "owner"));
     assert.equal(r.status, 409);
     assert.equal(await errCode(r), "video_already_attached");
     assert.equal(api.videos.size, before);
@@ -157,12 +157,12 @@ Deno.test("sync-video: refleja estado y duración de Bunny; solo admin", async (
   assert.equal((await h(post({ class_id: c.id }, "user"))).status, 403);
 
   api.videos.get(v.guid)!.status = 3; // Transcoding
-  let body = await (await h(post({ class_id: c.id }, "admin"))).json();
+  let body = await (await h(post({ class_id: c.id }, "owner"))).json();
   assert.equal(body.class.video_status, "processing");
 
   api.videos.get(v.guid)!.status = 4; // Finished
   api.videos.get(v.guid)!.length = 2699.6;
-  body = await (await h(post({ class_id: c.id }, "admin"))).json();
+  body = await (await h(post({ class_id: c.id }, "owner"))).json();
   assert.equal(body.class.video_status, "ready");
   assert.equal(body.class.duration_seconds, 2700);
   assert.equal(body.class.is_published, false); // nunca publica solo
@@ -173,7 +173,7 @@ Deno.test("sync-video: si el video falla, una clase publicada se despublica (res
   const v = await deps.bunny.createVideo("v");
   const c = repo.addClass({ bunny_video_id: v.guid, video_status: "ready", is_published: true });
   api.videos.get(v.guid)!.status = 5; // Error
-  const r = await createSync(deps)(post({ class_id: c.id }, "admin"));
+  const r = await createSync(deps)(post({ class_id: c.id }, "owner"));
   assert.equal(r.status, 200); // el fake lanzaría si se violara el CHECK
   const body = await r.json();
   assert.equal(body.class.video_status, "failed");
@@ -184,14 +184,14 @@ Deno.test("sync-video: video desaparecido en Bunny -> failed; sin video -> 409; 
   const { deps, repo } = makeDeps();
   const h = createSync(deps);
   const lost = repo.addClass({ bunny_video_id: crypto.randomUUID(), video_status: "ready", is_published: true });
-  const body = await (await h(post({ class_id: lost.id }, "admin"))).json();
+  const body = await (await h(post({ class_id: lost.id }, "owner"))).json();
   assert.equal(body.bunny_found, false);
   assert.equal(body.class.video_status, "failed");
   assert.equal(body.class.is_published, false);
 
   const none = repo.addClass();
-  assert.equal((await h(post({ class_id: none.id }, "admin"))).status, 409);
-  assert.equal((await h(post({ class_id: crypto.randomUUID() }, "admin"))).status, 404);
+  assert.equal((await h(post({ class_id: none.id }, "owner"))).status, 409);
+  assert.equal((await h(post({ class_id: crypto.randomUUID() }, "owner"))).status, 404);
 });
 
 // =============================================================== admin-delete-class
@@ -203,7 +203,7 @@ Deno.test("delete-class: borra video y clase; solo admin", async () => {
   assert.equal((await h(post({ class_id: c.id }, "user"))).status, 403);
   assert.equal(repo.classes.size, 1);
 
-  const r = await h(post({ class_id: c.id }, "admin"));
+  const r = await h(post({ class_id: c.id }, "owner"));
   assert.deepEqual(await r.json(), { deleted: true, class_id: c.id, video_deleted: true });
   assert.equal(repo.classes.size, 0);
   assert.equal(api.videos.size, 0);
@@ -215,14 +215,14 @@ Deno.test("delete-class: borra también la miniatura; si Storage falla no rompe 
   const a = repo.addClass({
     thumbnail_url: "https://x.supabase.co/storage/v1/object/public/class-thumbnails/a/1.webp",
   });
-  assert.equal((await h(post({ class_id: a.id }, "admin"))).status, 200);
+  assert.equal((await h(post({ class_id: a.id }, "owner"))).status, 200);
   assert.deepEqual(repo.deletedThumbnails, [a.thumbnail_url]);
 
   repo.failThumbnailDelete = true;
   const b = repo.addClass({
     thumbnail_url: "https://x.supabase.co/storage/v1/object/public/class-thumbnails/b/1.webp",
   });
-  const r = await h(post({ class_id: b.id }, "admin"));
+  const r = await h(post({ class_id: b.id }, "owner"));
   assert.equal(r.status, 200); // la clase ya se borró: la miniatura es secundaria
   assert.equal(repo.classes.has(b.id), false);
 });
@@ -232,7 +232,7 @@ Deno.test("delete-class: si Bunny falla NO se borra la clase (se puede reintenta
   const v = await deps.bunny.createVideo("v");
   const c = repo.addClass({ bunny_video_id: v.guid });
   api.failWith = { method: "DELETE", status: 500 };
-  const r = await createDelete(deps)(post({ class_id: c.id }, "admin"));
+  const r = await createDelete(deps)(post({ class_id: c.id }, "owner"));
   assert.equal(r.status, 502);
   assert.equal(repo.classes.size, 1);
   assert.equal(repo.deleteCalls, 0);
@@ -242,11 +242,11 @@ Deno.test("delete-class: video ya borrado en Bunny (404) igual limpia la clase; 
   const { deps, repo } = makeDeps();
   const h = createDelete(deps);
   const a = repo.addClass({ bunny_video_id: crypto.randomUUID() });
-  assert.equal((await (await h(post({ class_id: a.id }, "admin"))).json()).video_deleted, false);
+  assert.equal((await (await h(post({ class_id: a.id }, "owner"))).json()).video_deleted, false);
   const b = repo.addClass();
-  assert.equal((await h(post({ class_id: b.id }, "admin"))).status, 200);
+  assert.equal((await h(post({ class_id: b.id }, "owner"))).status, 200);
   assert.equal(repo.classes.size, 0);
-  assert.equal((await h(post({ class_id: crypto.randomUUID() }, "admin"))).status, 404);
+  assert.equal((await h(post({ class_id: crypto.randomUUID() }, "owner"))).status, 404);
 });
 
 // =============================================================== playback
@@ -305,13 +305,13 @@ Deno.test("playback: clase no publicada -> 403 (no revela que existe); admin sí
   assert.equal(r.status, 403);
   const ghost = await h(post({ class_id: crypto.randomUUID() }, "user"));
   assert.equal(ghost.status, 403); // misma respuesta que "no publicada"
-  assert.equal((await h(post({ class_id: c.id }, "admin"))).status, 200);
+  assert.equal((await h(post({ class_id: c.id }, "owner"))).status, 200);
 });
 
 Deno.test("playback: video no listo -> 409 (caso admin en clase sin video)", async () => {
   const { deps, repo } = makeDeps();
   const c = repo.addClass({ video_status: "processing" });
-  const r = await createPlayback(deps)(post({ class_id: c.id }, "admin"));
+  const r = await createPlayback(deps)(post({ class_id: c.id }, "owner"));
   assert.equal(r.status, 409);
   assert.equal(await errCode(r), "video_not_ready");
 });

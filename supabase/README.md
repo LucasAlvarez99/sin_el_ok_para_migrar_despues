@@ -46,8 +46,8 @@ Desde la **raíz del proyecto** (ver README principal: `npm install` y completar
 1. Crear el proyecto en supabase.com y copiar el *Reference ID* a `SUPABASE_PROJECT_REF` en `.env`.
 2. `npm run sb:login` (abre el navegador) y luego `npm run sb:link`.
 3. `npm run sb:db-push` aplica la base (`supabase/migrations/`).
-4. Registrar la primera cuenta desde la web y convertirla en admin con
-   `supabase/promote_admin.example.sql` (SQL Editor de Supabase).
+4. Registrar la primera cuenta desde la web y darle el rol de desarrollador con
+   `supabase/promote_role.example.sql` (SQL Editor de Supabase).
 5. Completar `supabase/.env` con los datos de Bunny y ejecutar `npm run sb:secrets`.
 6. `npm run sb:deploy` publica las funciones.
 

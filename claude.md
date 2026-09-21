@@ -93,7 +93,10 @@ en el PR); cambiar el diseño visual sin necesidad. **Sí** reemplazar datos fal
 nvm use && npm ci            # instalación reproducible (Node y lockfile fijados)
 npm run dev                  # sitio en http://localhost:3000
 npm run verify               # formato + lint + tipos + pruebas unitarias
-npm run test:web             # pruebas unitarias del frontend (Deno, sin dependencias nuevas)
+npm run test:web             # pruebas unitarias del frontend y de doctor (Deno, sin dependencias nuevas)
+npm run test:db              # base de datos: migraciones + permisos por rol (requiere PostgreSQL)
+npm run doctor[:online]      # revisa la configuración para producción
+npm run test:integration     # prueba real contra Supabase+Bunny (se omite sin credenciales)
 npm run test:e2e             # E2E en navegador (requiere Chrome/Chromium: ver README)
 npm run build                # arma dist/ con solo los archivos públicos
 npm run sb:db-push | sb:secrets | sb:deploy   # despliegue (ver supabase/README.md)
@@ -129,5 +132,10 @@ Estado a 20/09/2026. Leyenda: [x] hecho y probado · [~] hecho, con algo pendien
   (periódico, al pausar, al salir, al terminar, retomar y empezar de cero)
 - [~] README con comandos de instalación y pruebas; faltan los pasos de despliegue definitivos con cuentas reales
 
-Todo lo demás (paneles, roles, reconciliación, pagos, tienda) está planificado por fases en `docs/AUDITORIA-Y-PLAN.md`
+- [x] **Roles y auditoría** (`user`/`owner`/`developer`, historial inmutable): base de datos con `npm run test:db` y guardas
+  con pruebas de "acceso denegado" por nivel
+- [~] **Puesta en marcha con cuentas reales**: guía (`docs/PUESTA-EN-MARCHA.md`), `npm run doctor[:online]` y
+  `npm run test:integration` listos; **falta que el cliente cree las cuentas**
+
+Todo lo demás (paneles, reconciliación, pagos, tienda) está planificado por fases en `docs/AUDITORIA-Y-PLAN.md`
 y **no** se empieza sin cerrar la fase anterior.
