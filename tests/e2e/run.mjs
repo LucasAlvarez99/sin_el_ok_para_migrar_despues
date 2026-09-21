@@ -38,7 +38,8 @@ const browser = await puppeteer.launch({
 const S = be.origin.site;
 const PASS = 'clave-segura-123';
 const results = [];
-const only = process.argv[2];
+const only = process.argv[2]; // filtro: varias partes separadas por | (p. ej. "catálogo|reproductor")
+const selected = (name) => !only || only.split('|').some((part) => name.includes(part));
 
 async function newPage() {
   const context = await browser.createBrowserContext(); // localStorage limpio por prueba
@@ -73,12 +74,14 @@ async function openClass(page, id) {
 }
 async function playAndWait(page, seconds = 1.5) {
   await page.waitForSelector('.yp-bigplay', { visible: true, timeout: 15000 });
+  // Tras iniciar sesión, el modal tarda ~300 ms en desvanecerse y su telón intercepta los clics.
+  await waitFor(page, () => !document.querySelector('.modal-backdrop, .modal.show'), null, 5000);
   await page.click('.yp-bigplay');
   await waitFor(page, (s) => document.querySelector('.yp-video')?.currentTime > s, seconds, 20000);
 }
 
 async function test(name, fn) {
-  if (only && !name.includes(only)) return;
+  if (!selected(name)) return;
   await be.reset();
   const page = await newPage();
   const t0 = Date.now();
@@ -90,6 +93,7 @@ async function test(name, fn) {
   } catch (err) {
     results.push({ name, ok: false, err });
     console.log(`  ✗ ${name}\n      ${String(err.message).split('\n').join('\n      ')}`);
+    if (page.errors.length) console.log(`      (errores de la página: ${page.errors.join(' | ').slice(0, 400)})`);
     await page.screenshot({ path: `/tmp/e2e-fail-${results.length}.png` }).catch(() => {});
   } finally {
     await page.ctx.close().catch(() => {});
@@ -327,29 +331,34 @@ await test('progreso: "Empezar de cero" vuelve al inicio', async (page) => {
   await waitFor(page, () => document.querySelector('.yp-video').currentTime < 3 && !document.querySelector('.yp-video').paused, null, 10000);
 });
 
-await test('progreso: al cambiar de página se guarda (keepalive) y al terminar la clase queda "Vista"', async (page) => {
+await test('progreso: al cambiar de página se guarda (keepalive), aunque no toque el guardado periódico', async (page) => {
+  be.setProgressInterval(300); // sin guardados periódicos: el único posible es el de salida
   await signup('ana@test.dev');
   await openClass(page, IDS.free);
   await loginViaModal(page, 'ana@test.dev');
   await page.waitForSelector('.yp-player');
-  await playAndWait(page, 3);
-  const before = (await be.state()).log.saves.length;
+  await playAndWait(page, 6.2);
   const tLeave = await videoTime(page);
-  await page.goto(`${S}/videoteca.html`); // dispara pagehide
-  await waitFor(page, async (n) => (await (await fetch('http://127.0.0.1:4174/__test/state')).json()).log.saves.length > n, before, 8000);
-  const last = (await be.state()).log.saves.at(-1);
-  assert.ok(last.seconds >= tLeave - 1.5, `debió guardar cerca de ${tLeave.toFixed(1)}s (guardó ${last.seconds}s)`);
+  assert.equal((await be.state()).log.saves.length, 0, 'no debía haber guardados periódicos');
+  await page.goto(`${S}/videoteca.html`); // dispara pagehide -> fetch keepalive
+  await waitFor(page, async () => (await (await fetch('http://127.0.0.1:4174/__test/state')).json()).log.saves.length === 1, null, 8000);
+  const [save] = (await be.state()).log.saves;
+  assert.ok(Math.abs(save.seconds - Math.floor(tLeave)) <= 1, `debió guardar ~${Math.floor(tLeave)}s (guardó ${save.seconds}s)`);
+});
 
-  // terminar: ir casi al final y dejar que acabe
+await test('progreso: al terminar la clase queda completada ("Vista") y se guarda la duración', async (page) => {
+  await signup('ana@test.dev');
   await openClass(page, IDS.free);
+  await loginViaModal(page, 'ana@test.dev');
   await page.waitForSelector('.yp-player');
   await page.waitForSelector('.yp-bigplay', { visible: true });
-  await page.evaluate(() => { const v = document.querySelector('.yp-video'); v.currentTime = 10.5; });
+  await waitFor(page, () => !document.querySelector('.modal-backdrop, .modal.show'), null, 5000);
+  await page.evaluate(() => { document.querySelector('.yp-video').currentTime = 10.5; });
   await page.click('.yp-bigplay');
   await waitFor(page, () => document.querySelector('.yp-player').dataset.state === 'ended', null, 20000);
-  await waitFor(page, async () => (await (await fetch('http://127.0.0.1:4174/__test/state')).json()).progress.some((p) => p.completed), null, 8000);
+  await waitFor(page, async () => (await (await fetch('http://127.0.0.1:4174/__test/state')).json()).progress.some((p) => p.completed && p.progress_seconds === 12), null, 8000);
   await page.goto(`${S}/videoteca.html`);
-  await waitFor(page, () => document.querySelectorAll('.tag-light').length > 0 && /Vista/.test(document.querySelector('#catalogGrid').textContent));
+  await waitFor(page, () => /Vista/.test(document.querySelector('#catalogGrid').textContent));
 });
 
 await test('"Continuar viendo": aparece con clases empezadas y no terminadas', async (page) => {
@@ -421,6 +430,29 @@ await test('cuenta: registro que exige confirmar el correo, y recuperación de c
   await page.click('.yp-auth button[type=submit]');
   await waitFor(page, () => /Si ana@test\.dev tiene una cuenta/.test(document.querySelector('.yp-auth-note')?.textContent || ''));
   assert.deepEqual((await be.state()).recoveries, ['ana@test.dev']);
+});
+
+await test('recuperación: el enlace del correo abre "contraseña nueva", la guarda y permite entrar con ella', async (page) => {
+  await signup('ana@test.dev');
+  // El enlace del correo lleva la sesión de recuperación en el fragmento de la URL (flujo implícito de Supabase).
+  const r = await fetch(`${be.origin.api}/auth/v1/token?grant_type=password`, { method: 'POST', body: JSON.stringify({ email: 'ana@test.dev', password: PASS }) });
+  const tok = await r.json();
+  await page.goto(`${S}/index.html#access_token=${tok.access_token}&refresh_token=${tok.refresh_token}&expires_in=3600&token_type=bearer&type=recovery`);
+  await waitFor(page, () => /contraseña nueva/i.test(document.querySelector('.yp-auth .modal-title')?.textContent || ''), null, 10000);
+  await page.type('#authPass', 'corta');
+  await page.click('.yp-auth button[type=submit]');
+  await page.waitForSelector('.yp-form-error');
+  assert.match(await text(page, '.yp-form-error'), /al menos 8 caracteres/);
+  await page.$eval('#authPass', (i) => (i.value = ''));
+  await page.type('#authPass', 'otra-clave-nueva-456');
+  await page.click('.yp-auth button[type=submit]');
+  await waitFor(page, () => /Contraseña actualizada/.test(document.querySelector('.yp-toasts')?.textContent || ''), null, 8000);
+  assert.ok(!page.url().includes('access_token'), 'el token no debe quedar en la barra de direcciones');
+  // La contraseña vieja ya no sirve y la nueva sí.
+  const old = await fetch(`${be.origin.api}/auth/v1/token?grant_type=password`, { method: 'POST', body: JSON.stringify({ email: 'ana@test.dev', password: PASS }) });
+  const nueva = await fetch(`${be.origin.api}/auth/v1/token?grant_type=password`, { method: 'POST', body: JSON.stringify({ email: 'ana@test.dev', password: 'otra-clave-nueva-456' }) });
+  assert.equal(old.status, 400);
+  assert.equal(nueva.status, 200);
 });
 
 await test('cuenta: editar el nombre y cambiar la contraseña', async (page) => {

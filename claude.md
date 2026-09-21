@@ -1,62 +1,129 @@
-Quiero convertir este repositorio de YogaPop Up desde una prueba técnica a un producto real.
+# CLAUDE.md · YogaPop Up
 
-Contexto:
-- Frontend actual: HTML, CSS y JavaScript estático.
-- Backend: Supabase Edge Functions con TypeScript/Deno.
-- Base de datos: Supabase Postgres con RLS.
-- Vídeos: Bunny Stream mediante subida TUS y reproducción HLS firmada.
-- El repositorio ya contiene lógica de autenticación, permisos, progreso, webhooks, firmas Bunny y pruebas unitarias.
-- No quiero una reescritura innecesaria ni perder las garantías de seguridad actuales.
+Instrucciones permanentes para trabajar en este repositorio. Léelas antes de tocar código.
+El detalle de huecos y fases está en [`docs/AUDITORIA-Y-PLAN.md`](docs/AUDITORIA-Y-PLAN.md).
 
-Objetivo:
-Construir un MVP comercial funcional con:
-1. Registro, login, logout, edición de perfil, recuperación de contraseña y sesión persistente.
-2. Catálogo real de clases cargado desde Supabase.
-3. Videoteca protegida.
-4. Reproductor HLS con hls.js.
-5. URLs Bunny firmadas y renovación antes de expirar.
-6. Guardado de progreso con debounce, al pausar, al cambiar de página y al terminar.
-7. Sección “Continuar viendo”.
-8. Panel de negocio protegido para el propietario y panel técnico interno separado para los desarrolladores, ambos fuera de la aplicación de usuarios y con permisos diferentes.
-9. Creación, edición, publicación, despublicación y eliminación de clases.
-10. Subida directa a Bunny con progreso visible.
-11. Estados de vídeo: pendiente, subiendo, procesando, listo, fallido y abandonado.
-12. Reintentos y reconciliación entre Bunny y Supabase.
-13. Base preparada para pagos y entitlements.
-14. Tests unitarios, integración y E2E.
-15. Deben existir tres niveles de acceso claramente separados: usuarios finales, propietario y desarrolladores. El propietario tendrá un rol de superusuario de negocio y podrá gestionar las operaciones funcionales que necesite, como clases, publicaciones, catálogo, usuarios, entitlements y métricas, siempre mediante un panel de negocio protegido y con autorización validada en el servidor. Los desarrolladores tendrán acceso adicional al panel técnico interno, incluyendo operaciones de diagnóstico, reconciliación, configuración y mantenimiento. El propietario no debe recibir secretos, service role keys, API keys de Bunny ni acceso directo a Supabase, Bunny o a la infraestructura. Los usuarios finales solo podrán utilizar la aplicación pública y sus funciones de cliente.
-16. Modulariza todo el proyecto para favorecer la escalabilidad y reducir el riesgo de regresiones. Separa como módulos independientes, como mínimo, autenticación, perfiles, catálogo, clases, reproducción, progreso, entitlements, pagos, administración de negocio, herramientas técnicas, integración con Supabase, integración con Bunny y webhooks. Cada módulo debe tener una responsabilidad clara, una interfaz o contrato definido y no debe acceder directamente a la implementación interna de otro módulo. Evita dependencias circulares y centraliza la lógica compartida en módulos comunes bien delimitados. Añade tests unitarios para cada módulo, tests de contrato para sus interfaces, tests de integración para las conexiones entre módulos y tests E2E para los flujos críticos. Cualquier cambio en un módulo debe poder validarse de forma aislada y no debe romper otros módulos sin que las pruebas lo detecten.
-17. Implementa un sistema completo de cobros para todos los productos del negocio, tanto digitales como físicos. Debe contemplar pagos únicos y recurrentes para clases, cursos y suscripciones, y también la venta de ropa, mats y demás productos físicos. Separa claramente los entitlements digitales de los pedidos físicos: los pagos digitales deben activar o revocar accesos, mientras que los pedidos físicos deben gestionar variantes, tallas, colores, stock, dirección de entrega, impuestos, envíos, estados del pedido, devoluciones, reembolsos y cancelaciones. Utiliza proveedores adecuados para cada tipo de producto, por ejemplo Paddle para productos digitales y un proveedor de comercio electrónico o pagos físicos como Shopify o Stripe para la tienda, sin acoplar la lógica de negocio a un proveedor concreto. Todos los proveedores deben integrarse mediante adaptadores y webhooks firmados, idempotentes y validados en el servidor. No concedas acceso digital ni marques un pedido como pagado basándote únicamente en datos del navegador o en la redirección del checkout. Guarda los identificadores externos, el estado de cada operación y un historial auditable, y añade procesos de reintento y reconciliación para evitar pagos cobrados sin acceso, accesos sin pago, pedidos sin stock o estados inconsistentes.
+## 1. Qué es esto
 
-Reglas importantes:
-- No expongas nunca service role key, API keys de Bunny ni secretos en el frontend.
-- Conserva y revisa las políticas RLS existentes.
-- No uses select('*') en tablas que contengan columnas privadas.
-- No concedas acceso por datos enviados por el navegador.
-- Toda autorización debe validarse en servidor.
-- No borres registros de Postgres o vídeos Bunny sin estrategia de reconciliación.
-- Añade idempotencia a webhooks y operaciones administrativas.
-- Añade rate limiting o una estrategia equivalente para endpoints sensibles.
-- Mantén la separación entre lógica de negocio, Supabase y Bunny.
-- No añadas dependencias sin justificarlo.
-- No modifiques diseño visual sin necesidad, pero reemplaza todos los datos falsos por datos reales.
-- No dejes botones con href="#" ni acciones simuladas.
-- No consideres terminada una fase hasta tener una prueba ejecutable.
+YogaPop Up pasa de **prueba técnica a producto real** (MVP comercial). Un sitio de yoga con videoteca protegida,
+cursos, suscripciones y tienda física.
 
-Forma de trabajo:
-1. Audita primero el repositorio y enumera los huecos concretos.
-2. Propón un plan por fases con archivos afectados, migraciones y pruebas.
-3. Implementa una fase cada vez.
-4. Después de cada cambio ejecuta la prueba más específica posible.
-5. Al final ejecuta formato, lint, typecheck, tests y build.
-6. Si una integración externa no puede validarse sin credenciales, crea una prueba de integración claramente separada y documenta el paso manual.
-7. No hagas cambios cosméticos ni refactors amplios que no sean necesarios.
+| Capa | Tecnología |
+|---|---|
+| Frontend | HTML + CSS + JavaScript estático (ES modules, sin build ni framework), Bootstrap 5.3.3 |
+| Backend | Supabase Edge Functions, TypeScript sobre Deno |
+| Datos | Supabase Postgres con RLS + Supabase Auth + Storage |
+| Vídeo | Bunny Stream: subida TUS directa desde el navegador, reproducción HLS con URL firmada (hls.js) |
+| Pagos (por construir) | Paddle (digital) y Stripe o Shopify (físico), detrás de adaptadores |
 
-Primera entrega:
-- Corrige la reproducibilidad de npm/Deno.
-- Implementa autenticación frontend.
-- Implementa catálogo real desde Supabase.
-- Implementa una página de detalle de clase.
-- Implementa el reproductor de un solo vídeo.
-- Añade pruebas para los estados de carga, error, acceso denegado, URL expirada y progreso.
-- Actualiza README con comandos exactos de instalación, pruebas y despliegue.
+**No se reescribe lo que ya funciona.** Ya existen y se conservan: autenticación y permisos en servidor, RLS,
+progreso (`save_progress`), firmas Bunny (verificadas contra el código oficial), webhook firmado y pruebas.
+
+## 2. Tres niveles de acceso (deben estar siempre separados)
+
+| Nivel | Superficie | Puede | No puede |
+|---|---|---|---|
+| **Usuario final** | Sitio público (`index.html`, `videoteca.html`, `clase.html`, cuenta) | Ver catálogo, reproducir lo que tenga permitido, guardar su progreso, editar su perfil, comprar | Ver o llamar nada de administración |
+| **Propietario** (`owner`) | Panel de negocio (`/panel`), fuera de la app de usuarios | Clases, publicación, catálogo, usuarios, entitlements, pedidos, métricas | Recibir secretos, service role, API keys de Bunny o acceso directo a Supabase/Bunny/infra |
+| **Desarrollador** (`developer`) | Panel técnico interno (`/interno`), separado del de negocio | Diagnóstico, reconciliación, configuración, mantenimiento | — (todo queda auditado) |
+
+- La autorización se valida **siempre en el servidor** (RLS + Edge Functions). Ocultar un botón nunca es un control.
+- Cada superficie tiene su propia entrada, sus propias funciones y sus propias pruebas de "acceso denegado".
+- Todo cambio de rol, entitlement o dato sensible deja un registro en el historial de auditoría.
+
+## 3. Módulos
+
+Cada módulo tiene **una responsabilidad**, un **contrato público** (`index` con tipos) y **no importa la implementación
+interna de otro**. Sin dependencias circulares. Lo compartido vive solo en `common`.
+
+| Módulo | Responsabilidad | Puede depender de |
+|---|---|---|
+| `common` | HTTP, errores, validación, config, rate limiting, idempotencia, auditoría | — |
+| `auth` | Sesión, roles, guardas (`requireUser/Owner/Developer`) | common |
+| `profiles` | Perfil propio (lectura/edición) | common, auth |
+| `catalog` | Lectura del catálogo publicado | common |
+| `classes` | Alta/edición/publicación/borrado lógico de clases | common, auth, catalog, bunny |
+| `playback` | Decidir acceso y entregar URL firmada | common, auth, entitlements, bunny |
+| `progress` | Guardado y lectura de progreso | common, auth |
+| `entitlements` | Derechos de acceso digital (conceder/revocar/consultar) | common, auth |
+| `payments` | Pedidos/cobros, agnóstico del proveedor; activa o revoca entitlements | common, entitlements |
+| `business-admin` | Casos de uso del panel de negocio | los módulos anteriores vía contrato |
+| `tech-tools` | Diagnóstico, reconciliación, configuración | common, auth, bunny, supabase |
+| `supabase` | Adaptadores de repositorio y auth (única capa que habla con Supabase) | common |
+| `bunny` | Adaptador de Bunny (única capa que habla con Bunny) | common |
+| `webhooks` | Recepción firmada e idempotente (Bunny, Paddle, tienda) | common, bunny, payments |
+
+Reglas: la **lógica de negocio no conoce Supabase ni Bunny** (usa puertos/interfaces); los proveedores se enchufan por
+**adaptadores**. Hoy el backend vive en `supabase/functions/_shared/` y el frontend en `js/{lib,ui,components,pages}`;
+la migración a módulos con contrato es la Fase 2 del plan y se hace **de forma incremental**, sin reescribir.
+
+## 4. Seguridad: reglas no negociables
+
+1. Nunca exponer en el frontend: service role key, API keys de Bunny, secretos de webhooks, claves de pago.
+   El propietario tampoco los recibe.
+2. **No** usar `select('*')` en tablas con columnas privadas (`classes` tiene `bunny_*` restringidas): listar columnas.
+3. **Nunca** conceder acceso por datos que envía el navegador (ni redirecciones de checkout): solo por webhook
+   firmado y verificado en servidor.
+4. Toda operación sensible: autorización en servidor + **rate limiting** + entrada validada.
+5. Webhooks y operaciones administrativas: **idempotentes** (clave de idempotencia / registro de eventos).
+6. No borrar filas de Postgres ni vídeos de Bunny sin estrategia de reconciliación (borrado lógico + tarea de limpieza).
+7. Conservar y revisar las políticas RLS existentes; toda tabla nueva nace con RLS y privilegios mínimos.
+8. Los textos de usuarios se insertan como texto (`el()` / `textContent`), nunca con `innerHTML`.
+
+## 5. Cómo trabajar
+
+1. **Audita** antes de cambiar. 2. **Plan por fases** con archivos, migraciones y pruebas. 3. **Una fase a la vez.**
+4. Tras cada cambio corre la **prueba más específica posible**. 5. Al cerrar una fase: formato, lint, typecheck,
+tests y build.
+
+**Definición de "hecho"**: una fase no está terminada hasta tener una **prueba ejecutable** que la respalde.
+Si una integración externa no se puede probar sin credenciales, hay una prueba de integración **claramente separada**
+(`*.integration.*`, se omite sin credenciales) y el paso manual queda documentado.
+
+**Pruebas por módulo**: unitarias + de contrato (su interfaz) + de integración (conexión con otros módulos) + E2E de los
+flujos críticos. Un cambio en un módulo debe poder validarse solo y no romper a otro sin que una prueba lo detecte.
+
+**Evitar**: refactors amplios o cambios cosméticos innecesarios; dependencias nuevas sin justificar (anotar el porqué
+en el PR); cambiar el diseño visual sin necesidad. **Sí** reemplazar datos falsos por datos reales y eliminar
+`href="#"` y acciones simuladas.
+
+## 6. Comandos
+
+```bash
+nvm use && npm ci            # instalación reproducible (Node y lockfile fijados)
+npm run dev                  # sitio en http://localhost:3000
+npm run verify               # formato + lint + tipos + pruebas unitarias
+npm run test:web             # pruebas unitarias del frontend (Deno, sin dependencias nuevas)
+npm run test:e2e             # E2E en navegador (requiere Chrome/Chromium: ver README)
+npm run build                # arma dist/ con solo los archivos públicos
+npm run sb:db-push | sb:secrets | sb:deploy   # despliegue (ver supabase/README.md)
+```
+
+## 7. Trampas conocidas (ya nos mordieron)
+
+- `classes.classes_published_requires_ready`: no se puede publicar sin `video_status = 'ready'`; al fallar un video hay
+  que despublicar en la misma operación.
+- Los números de estado del **webhook** de Bunny y los de la **API** son distintos: el webhook solo avisa; el estado
+  real se consulta a la API.
+- Al capturar un valor "anterior" de una fila, hacerlo **antes** de actualizarla (bug real detectado por las pruebas).
+- Las carpetas `_tests` y `_shared` empiezan con guion bajo para que el CLI de Supabase no las despliegue como funciones.
+- Un `.env` servido por un servidor estático queda público: publicar **solo** `dist/`.
+- Con `package.json` en la raíz, Deno resuelve desde `node_modules`: los scripts pasan `--config supabase/functions/deno.json`.
+
+## 8. Primera entrega (alcance actual)
+
+Estado a 20/09/2026. Leyenda: [x] hecho y probado · [~] hecho, con algo pendiente · [ ] pendiente.
+
+- [~] Reproducibilidad de npm/Deno: versiones exactas, `deno.lock` congelado, `.nvmrc` y CI escrito
+  (**el CI todavía no se ejecutó en GitHub**)
+- [~] Autenticación en el frontend: registro, login, logout, sesión persistente, perfil, cambio de contraseña y
+  petición de recuperación probados en navegador; el cambio de contraseña desde el enlace del correo tiene su prueba E2E **en rojo** (ver README)
+- [x] Catálogo real desde Supabase (carga, error, vacío y filtros)
+- [x] Página de detalle de clase (sin sesión, sin acceso, no encontrada, en preparación, error y reintento)
+- [x] Reproductor de un solo vídeo (HLS real con URL firmada en la ruta, calidades, velocidad, teclado, retomar)
+- [x] Pruebas de carga, error, acceso denegado, URL expirada (al cargar, siempre y preventiva) y progreso
+  (periódico, al pausar, al salir, al terminar, retomar y empezar de cero)
+- [~] README con comandos de instalación y pruebas; faltan los pasos de despliegue definitivos con cuentas reales
+
+Todo lo demás (paneles, roles, reconciliación, pagos, tienda) está planificado por fases en `docs/AUDITORIA-Y-PLAN.md`
+y **no** se empieza sin cerrar la fase anterior.

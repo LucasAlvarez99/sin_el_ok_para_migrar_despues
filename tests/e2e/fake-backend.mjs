@@ -43,7 +43,8 @@ function seed() {
   };
 }
 
-export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, cdn: 4175 }, progressIntervalSeconds = 2 }) {
+export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, cdn: 4175 }, progressIntervalSeconds: initialInterval = 2 }) {
+  let progressIntervalSeconds = initialInterval; // se puede cambiar por prueba con setProgressInterval()
   let db = seed();
   const mediaDir = ensureMedia(IDS.free);
   const origin = { site: `http://127.0.0.1:${ports.site}`, api: `http://127.0.0.1:${ports.api}`, cdn: `http://127.0.0.1:${ports.cdn}` };
@@ -295,7 +296,8 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
   const control = (path, body) => fetch(`${origin.api}/__test/${path}`, { method: 'POST', body: JSON.stringify(body || {}) }).then((r) => r.json());
   return {
     origin, IDS,
-    reset: () => control('reset'),
+    reset: () => { progressIntervalSeconds = initialInterval; return control('reset'); },
+    setProgressInterval: (n) => { progressIntervalSeconds = n; },
     behavior: (b) => control('behavior', b),
     entitle: (email, classId) => control('entitle', { email, classId }),
     state: () => fetch(`${origin.api}/__test/state`).then((r) => r.json()),

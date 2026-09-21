@@ -9,7 +9,7 @@ import { toast } from './toast.js';
  * `openAuth()` devuelve una promesa que resuelve true si al cerrarse hay sesión iniciada.
  */
 const MIN_PASSWORD = 8;
-let modalEl, bsModal, bodyEl, titleEl, view = 'login', notice = '', busy = false, isShown = false;
+let modalEl, bsModal, bodyEl, titleEl, view = 'login', notice = '', busy = false, isShown = false, isHiding = false, lastInput = null;
 
 const TITLES = {
   login: 'Iniciá sesión', register: 'Creá tu cuenta', forgot: 'Recuperar contraseña',
@@ -28,8 +28,10 @@ function build() {
         bodyEl)));
   document.body.append(modalEl);
   bsModal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+  modalEl.addEventListener('focusin', (e) => { if (e.target instanceof HTMLInputElement) lastInput = e.target; });
   modalEl.addEventListener('shown.bs.modal', () => { isShown = true; });
-  modalEl.addEventListener('hidden.bs.modal', () => { isShown = false; });
+  modalEl.addEventListener('hide.bs.modal', () => { isHiding = true; });
+  modalEl.addEventListener('hidden.bs.modal', () => { isShown = false; isHiding = false; });
 }
 
 /**
@@ -180,8 +182,17 @@ export function openAuth({ view: v = 'login', message = '' } = {}) {
   return new Promise((resolve) => {
     const onHidden = () => { modalEl.removeEventListener('hidden.bs.modal', onHidden); resolve(session.isLoggedIn()); };
     modalEl.addEventListener('hidden.bs.modal', onHidden);
-    modalEl.addEventListener('shown.bs.modal', () => modalEl.querySelector('input')?.focus(), { once: true });
-    bsModal.show();
+    // Al terminar de abrirse, Bootstrap enfoca el contenedor del modal (trampa de foco). Si la persona ya venía
+    // escribiendo (en un móvil lento la animación tarda), se le devuelve el foco al campo que estaba usando;
+    // si no, se enfoca el primero. Así nunca se mezclan los datos entre campos.
+    modalEl.addEventListener('shown.bs.modal', () => {
+      const target = lastInput && modalEl.contains(lastInput) ? lastInput : modalEl.querySelector('input');
+      target?.focus();
+    }, { once: true });
+    lastInput = null;
+    // Bootstrap ignora show() mientras la animación de cierre no terminó: se espera a que acabe.
+    if (isHiding) modalEl.addEventListener('hidden.bs.modal', () => bsModal.show(), { once: true });
+    else bsModal.show();
   });
 }
 

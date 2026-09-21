@@ -18,20 +18,20 @@ Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
 
 | # | Requisito | Estado | Hueco concreto |
 |---|---|---|---|
-| 1 | Registro, login, logout, perfil, recuperación, sesión persistente | 🟡 | Módulos de sesión y modal escritos; **falta** página/edición de perfil y pruebas |
-| 2 | Catálogo real desde Supabase | 🟡 | RLS y columnas listas; **falta** conectar la home y la videoteca |
-| 3 | Videoteca protegida | 🟡 | `playback` protege en servidor; **falta** la página y el flujo de "iniciá sesión" |
-| 4 | Reproductor hls.js | 🟡 | Escrito; **sin probar en navegador** |
-| 5 | URLs firmadas y renovación | 🟡 | Firma en servidor ✅; renovación en el cliente escrita, sin probar |
-| 6 | Progreso (debounce, pausa, cambio de página, fin) | 🟡 | `ProgressReporter` y `save_progress` escritos; sin pruebas unitarias |
-| 7 | "Continuar viendo" | 🟡 | Consulta escrita; **falta** la sección |
+| 1 | Registro, login, logout, perfil, recuperación, sesión persistente | ✅ | Probado en navegador. Falta solo probar el cambio de contraseña desde el enlace del correo |
+| 2 | Catálogo real desde Supabase | ✅ | Home y videoteca con datos reales; carga, error, vacío y filtros probados |
+| 3 | Videoteca protegida | ✅ | `playback` protege en servidor; sin sesión, sin acceso y con acceso probados |
+| 4 | Reproductor hls.js | ✅ | Probado en Chromium con HLS real de 2 calidades |
+| 5 | URLs firmadas y renovación | ✅ | Firma verificada contra Bunny; renovación probada (vencida al cargar, siempre vencida y preventiva) |
+| 6 | Progreso (debounce, pausa, cambio de página, fin) | ✅ | 11 pruebas unitarias + E2E de guardado periódico, al pausar, al salir (keepalive) y al terminar |
+| 7 | "Continuar viendo" | ✅ | Sección en la videoteca, probada |
 | 8 | Panel de negocio y panel técnico separados | ⬜ | Solo existe el rol `admin`; no hay superficies separadas |
 | 9 | Crear, editar, publicar, despublicar, eliminar clases | 🟡 | Funciones de backend ✅; **borrado es físico** (contra la regla); sin interfaz |
 | 10 | Subida directa a Bunny con progreso | 🟡 | Credenciales TUS ✅ y cliente de subida escrito; **sin interfaz** |
 | 11 | Estados de vídeo | 🟡 | Hay 5 (`pending, uploading, processing, ready, failed`); **falta `abandoned`** |
 | 12 | Reintentos y reconciliación | 🟡 | Webhook + sincronización manual + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y huérfanos en Bunny |
 | 13 | Base para pagos y entitlements | 🟡 | `entitlements` y `can_access_class()` ✅; **sin altas/bajas por casos de uso ni auditoría** |
-| 14 | Tests unitarios, integración y E2E | 🟡 | 43 unitarias de backend; **no hay** de frontend, contrato, integración entre módulos ni E2E |
+| 14 | Tests unitarios, integración y E2E | 🟡 | 46 de backend (con contrato), 16 del frontend y 23 E2E; **faltan** integración entre módulos y contratos del resto |
 | 15 | Tres niveles de acceso | ⬜ | `role in ('user','admin')`; faltan `owner` y `developer`, y sus guardas |
 | 16 | Modularización con contratos | 🟡 | Patrón puertos/adaptadores en backend; **sin contratos formales, sin pruebas de contrato, sin regla anti-ciclos** |
 | 17 | Cobros digitales y físicos | ⬜ | Sin productos, pedidos, stock, envíos, devoluciones, proveedores ni webhooks de pago |

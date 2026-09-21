@@ -11,12 +11,12 @@
     "vendor": "node scripts/vendor.mjs",
     "build": "node scripts/build-site.mjs",
     "preview": "npm run build && serve dist -l 3001",
-    "test": "deno test --config supabase/functions/deno.json --lock=deno.lock --frozen supabase/functions",
-    "lint": "deno lint --config supabase/functions/deno.json supabase/functions",
-    "fmt": "deno fmt --config supabase/functions/deno.json supabase/functions",
-    "fmt:check": "deno fmt --config supabase/functions/deno.json --check supabase/functions",
+    "test": "deno test --allow-read --config supabase/functions/deno.json --lock=deno.lock --frozen supabase/functions",
+    "lint": "deno lint --config supabase/functions/deno.json supabase/functions tests/web",
+    "fmt": "deno fmt --config supabase/functions/deno.json supabase/functions tests/web",
+    "fmt:check": "deno fmt --config supabase/functions/deno.json --check supabase/functions tests/web",
     "typecheck": "deno check --config supabase/functions/deno.json --lock=deno.lock --frozen \"supabase/functions/*/index.ts\" \"supabase/functions/_tests/*.ts\"",
-    "verify": "npm run fmt:check && npm run lint && npm run typecheck && npm run test",
+    "verify": "npm run fmt:check && npm run lint && npm run typecheck && npm run test && npm run test:web",
     "sb": "node scripts/supabase.mjs",
     "sb:login": "supabase login",
     "sb:link": "node scripts/supabase.mjs link",
@@ -24,7 +24,8 @@
     "sb:secrets": "node scripts/supabase.mjs secrets",
     "sb:deploy": "node scripts/supabase.mjs deploy",
     "deno:lock": "deno cache --config supabase/functions/deno.json --lock=deno.lock \"supabase/functions/*/index.ts\" \"supabase/functions/_tests/*.ts\"",
-    "test:e2e": "node tests/e2e/run.mjs"
+    "test:e2e": "node tests/e2e/run.mjs",
+    "test:web": "deno test --config supabase/functions/deno.json tests/web"
   },
   "devDependencies": {
     "deno": "2.9.6",

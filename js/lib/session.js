@@ -43,16 +43,26 @@ async function applySession(session, event) {
 }
 
 /** Inicializa (una sola vez) y devuelve el estado. Seguro de llamar desde varios módulos. */
+// El enlace del correo de recuperación trae "type=recovery" en el fragmento de la URL. supabase-js lo limpia al
+// procesarlo, así que se lee ahora, al cargar el módulo.
+const arrivedByRecoveryLink = typeof location !== 'undefined' && /[#&]type=recovery\b/.test(location.hash);
+
 export function init() {
   if (!supabase) { state.ready = true; return Promise.resolve(state); }
   initPromise ??= (async () => {
-    const { data } = await supabase.auth.getSession();
-    await applySession(data.session, 'INITIAL_SESSION');
+    let sawRecovery = false;
+    // La suscripción va ANTES de esperar la sesión: supabase-js emite PASSWORD_RECOVERY durante su inicialización
+    // y, si nos suscribimos después, el evento se pierde y el enlace del correo no abriría el formulario.
     // No se llama a supabase dentro del callback (puede bloquear): se difiere con setTimeout.
     supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'INITIAL_SESSION') return;
+      if (event === 'PASSWORD_RECOVERY') sawRecovery = true;
       setTimeout(() => applySession(session, event), 0);
     });
+    const { data } = await supabase.auth.getSession();
+    await applySession(data.session, 'INITIAL_SESSION');
+    // Red de seguridad: llegó por un enlace de recuperación y la sesión existe, pero el evento no se vio.
+    if (arrivedByRecoveryLink && !sawRecovery && state.user) emit('PASSWORD_RECOVERY');
     return state;
   })();
   return initPromise;
