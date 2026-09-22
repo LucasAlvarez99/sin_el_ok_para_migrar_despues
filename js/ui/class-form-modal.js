@@ -1,0 +1,166 @@
+import { el, mount } from '../lib/dom.js';
+import { LEVEL_LABELS } from '../lib/format.js';
+import { messageFor } from '../lib/errors.js';
+import { adminCreateUpload, adminSyncVideo, adminUpdateClass, resizeImage, uploadThumbnail, uploadVideoToBunny } from '../lib/api.js';
+import { toast } from './toast.js';
+
+/**
+ * Fase 5, parte 2: crear una clase y subir su video (con barra de progreso), o reintentar la
+ * subida de una clase existente cuyo video quedó pendiente/incompleto/con error.
+ *
+ * El video SIEMPRE se sube directo del navegador a Bunny (TUS): el archivo nunca pasa por
+ * nuestro backend. `admin-create-upload` solo prepara las credenciales.
+ */
+let modalEl, bsModal, bodyEl, titleEl;
+const ACCESS_LABELS = { free: 'Gratis', restricted: 'Contenido restringido' };
+
+function build() {
+  titleEl = el('h2', { class: 'modal-title', id: 'classFormTitle' });
+  bodyEl = el('div', { class: 'modal-body' });
+  modalEl = el('div', { class: 'modal fade', id: 'classFormModal', tabindex: -1, 'aria-labelledby': 'classFormTitle', 'aria-hidden': 'true' },
+    el('div', { class: 'modal-dialog modal-dialog-centered' },
+      el('div', { class: 'modal-content' },
+        el('div', { class: 'modal-header' }, titleEl,
+          el('button', { type: 'button', class: 'btn-close', 'data-bs-dismiss': 'modal', 'aria-label': 'Cerrar' })),
+        bodyEl)));
+  document.body.append(modalEl);
+  bsModal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+}
+
+function showError(form, message) {
+  let box = form.querySelector('.yp-form-error');
+  if (!box) box = form.insertBefore(el('div', { class: 'alert alert-danger yp-form-error', role: 'alert' }), form.firstChild);
+  box.textContent = message;
+}
+
+function field(id, label, node) {
+  return el('div', { class: 'mb-3' }, el('label', { class: 'form-label', for: id }, label), node);
+}
+
+function levelSelect(current) {
+  return el('select', { class: 'form-select', id: 'cfLevel' },
+    ...Object.entries(LEVEL_LABELS).map(([v, label]) => el('option', { value: v, selected: v === current }, label)));
+}
+
+function accessSelect(current) {
+  return el('select', { class: 'form-select', id: 'cfAccess' },
+    ...Object.entries(ACCESS_LABELS).map(([v, label]) => el('option', { value: v, selected: v === current }, label)));
+}
+
+/**
+ * @param {{mode: 'create'|'retry', row?: object}} opts row es obligatorio en modo 'retry'.
+ * @returns {Promise<boolean>} true si se creó/subió algo (conviene refrescar la lista).
+ */
+export function openClassForm({ mode = 'create', row = null } = {}) {
+  if (!modalEl) build();
+  titleEl.textContent = mode === 'retry' ? `Subir video · ${row.title}` : 'Nueva clase';
+
+  const progressWrap = el('div', { class: 'mb-3 d-none' },
+    el('div', { class: 'progress', role: 'progressbar', 'aria-label': 'Progreso de la subida' },
+      el('div', { class: 'progress-bar bg-brand' })),
+    el('p', { class: 'form-text mb-0' }));
+  const [progressBox, barBox, progressText] = [progressWrap, progressWrap.querySelector('.progress-bar'), progressWrap.querySelector('.form-text')];
+
+  const metaFields = mode === 'retry'
+    ? [el('p', { class: 'text-muted small' }, 'El título y los demás datos de la clase no cambian acá; solo se sube el video.')]
+    : [
+      field('cfTitle', 'Título', el('input', { class: 'form-control', id: 'cfTitle', required: true, maxlength: 150 })),
+      field('cfDescription', 'Descripción', el('textarea', { class: 'form-control', id: 'cfDescription', rows: 3, maxlength: 5000 })),
+      el('div', { class: 'row' },
+        el('div', { class: 'col-6' }, field('cfCategory', 'Categoría', el('input', { class: 'form-control', id: 'cfCategory', maxlength: 60 }))),
+        el('div', { class: 'col-6' }, field('cfSort', 'Orden', el('input', { class: 'form-control', id: 'cfSort', type: 'number', value: '0', step: '1' })))),
+      el('div', { class: 'row' },
+        el('div', { class: 'col-6' }, field('cfLevel', 'Nivel', levelSelect('todos'))),
+        el('div', { class: 'col-6' }, field('cfAccess', 'Acceso', accessSelect('free')))),
+      field('cfThumb', 'Miniatura (opcional)', el('input', { class: 'form-control', id: 'cfThumb', type: 'file', accept: 'image/jpeg,image/png,image/webp' })),
+    ];
+
+  const form = el('form', { novalidate: true },
+    ...metaFields,
+    field('cfVideo', 'Video', el('input', { class: 'form-control', id: 'cfVideo', type: 'file', accept: 'video/*', required: true })),
+    progressBox,
+    el('div', { class: 'd-flex gap-2' },
+      el('button', { type: 'submit', class: 'btn btn-brand flex-grow-1' }, mode === 'retry' ? 'Subir video' : 'Crear y subir'),
+      el('button', { type: 'button', class: 'btn btn-outline-secondary d-none', id: 'cfCancel' }, 'Cancelar subida')));
+
+  const cancelBtn = form.querySelector('#cfCancel');
+  let aborter = null, aborted = false;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const videoFile = form.cfVideo.files[0];
+    if (!videoFile) return showError(form, 'Elegí un archivo de video.');
+    const title = mode === 'retry' ? row.title : form.cfTitle.value.trim();
+    if (mode !== 'retry' && !title) return showError(form, 'El título es obligatorio.');
+
+    const submitBtn = form.querySelector('button[type=submit]');
+    submitBtn.disabled = true;
+    aborted = false;
+    try {
+      const payload = mode === 'retry'
+        ? { class_id: row.id, title: row.title, description: row.description, category: row.category, level: row.level, access_level: row.access_level, sort_order: row.sort_order }
+        : {
+          title,
+          description: form.cfDescription.value.trim() || null,
+          category: form.cfCategory.value.trim() || null,
+          level: form.cfLevel.value,
+          access_level: form.cfAccess.value,
+          sort_order: Number(form.cfSort.value) || 0,
+        };
+      progressText.textContent = mode === 'retry' ? 'Preparando la subida…' : 'Creando la clase…';
+      progressBox.classList.remove('d-none');
+      const { class: cls, upload } = await adminCreateUpload(payload);
+
+      const thumbFile = mode === 'create' ? form.cfThumb.files[0] : null;
+      if (thumbFile) {
+        try {
+          const blob = await resizeImage(thumbFile);
+          const url = await uploadThumbnail(cls.id, blob);
+          await adminUpdateClass(cls.id, { thumbnail_url: url });
+        } catch (err) {
+          toast(`La clase se creó, pero la miniatura falló: ${messageFor(err)}`, { type: 'error', ms: 6000 });
+        }
+      }
+
+      cancelBtn.classList.remove('d-none');
+      cancelBtn.onclick = () => { aborted = true; aborter?.(); };
+      const { promise, abort } = uploadVideoToBunny(videoFile, upload, {
+        title,
+        onProgress: (sent, total) => {
+          const pct = total ? Math.round((sent / total) * 100) : 0;
+          barBox.style.width = `${pct}%`;
+          progressText.textContent = `Subiendo el video… ${pct}%`;
+        },
+      });
+      aborter = abort;
+      await promise;
+
+      try {
+        await adminSyncVideo(cls.id);
+      } catch { /* red de seguridad: si falla, el webhook lo va a reflejar igual */ }
+
+      closeModal();
+      toast(mode === 'retry' ? 'Video subido. Se está procesando.' : 'Clase creada. El video se está procesando.', { type: 'success' });
+      resolveOpen(true);
+    } catch (err) {
+      progressBox.classList.add('d-none');
+      cancelBtn.classList.add('d-none');
+      submitBtn.disabled = false;
+      if (aborted) toast('Subida cancelada.', { ms: 3000 });
+      else showError(form, messageFor(err));
+    }
+  });
+
+  mount(bodyEl, form);
+  bsModal.show();
+  let resolveOpen;
+  return new Promise((resolve) => {
+    resolveOpen = resolve;
+    const onHidden = () => { modalEl.removeEventListener('hidden.bs.modal', onHidden); resolve(false); };
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+  });
+}
+
+function closeModal() {
+  bsModal.hide();
+}

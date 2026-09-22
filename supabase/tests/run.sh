@@ -17,4 +17,5 @@ for f in migrations/*.sql; do
   echo "  migración aplicada: $(basename "$f")"
 done
 "${PSQL[@]}" -f tests/roles_and_audit.test.sql
+"${PSQL[@]}" -f tests/classes_publish_audit.test.sql
 echo "OK · pruebas de base de datos"

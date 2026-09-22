@@ -24,8 +24,11 @@ function open(anchor) {
   const items = [
     el('div', { class: 'yp-account-who' }, el('strong', {}, name), profile?.display_name ? el('small', {}, user.email) : null),
     el('a', { class: 'yp-account-item', href: page('videoteca.html'), role: 'menuitem' }, icon('collection-play'), 'Videoteca'),
-    // Los enlaces a los paneles (/panel para session.isOwner(), /interno para session.isDeveloper()) se añaden cuando
-    // esas páginas existan: no se muestra ningún enlace a una página que todavía no está.
+    // El enlace a /interno (session.isDeveloper()) se añade cuando esa página exista: no se muestra
+    // ningún enlace a una página que todavía no está.
+    session.isOwner()
+      ? el('a', { class: 'yp-account-item', href: page('panel.html'), role: 'menuitem' }, icon('kanban'), 'Panel de negocio')
+      : null,
     el('button', {
       type: 'button', class: 'yp-account-item', role: 'menuitem',
       onclick: async () => {

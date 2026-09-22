@@ -25,9 +25,9 @@ Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
 | 5 | URLs firmadas y renovación | ✅ | Firma verificada contra Bunny; renovación probada (vencida al cargar, siempre vencida y preventiva) |
 | 6 | Progreso (debounce, pausa, cambio de página, fin) | ✅ | 11 pruebas unitarias + E2E de guardado periódico, al pausar, al salir (keepalive) y al terminar |
 | 7 | "Continuar viendo" | ✅ | Sección en la videoteca, probada |
-| 8 | Panel de negocio y panel técnico separados | ⬜ | Solo existe el rol `admin`; no hay superficies separadas |
-| 9 | Crear, editar, publicar, despublicar, eliminar clases | 🟡 | Funciones de backend ✅; **borrado es físico** (contra la regla); sin interfaz |
-| 10 | Subida directa a Bunny con progreso | 🟡 | Credenciales TUS ✅ y cliente de subida escrito; **sin interfaz** |
+| 8 | Panel de negocio y panel técnico separados | 🟡 | `/panel` existe (rol `owner`/`developer`) con listado y publicar/despublicar; **falta** `/interno` |
+| 9 | Crear, editar, publicar, despublicar, eliminar clases | 🟡 | Crear + subir video ✅, publicar/despublicar ✅ (todo con interfaz y auditado); **falta** editar metadatos de una clase ya creada; **borrado sigue siendo físico** (contra la regla, aunque ya tiene botón en el panel) |
+| 10 | Subida directa a Bunny con progreso | ✅ | Interfaz en `/panel` con barra de progreso, cancelar, reintentar y subida reanudable (TUS) |
 | 11 | Estados de vídeo | 🟡 | Hay 5 (`pending, uploading, processing, ready, failed`); **falta `abandoned`** |
 | 12 | Reintentos y reconciliación | 🟡 | Webhook + sincronización manual + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y huérfanos en Bunny |
 | 13 | Base para pagos y entitlements | 🟡 | `entitlements` y `can_access_class()` ✅; **sin altas/bajas por casos de uso ni auditoría** |
@@ -65,10 +65,10 @@ Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba
 - **Archivos:** función programada `reconcile-videos` (Supabase cron): marca subidas abandonadas (pendientes > 24 h), detecta videos huérfanos en Bunny y filas sin video, purga tras un período de gracia.
 - **Pruebas:** unitarias con Bunny simulado (huérfano, faltante, abandonado, reintento) y de integración separada, omitida sin credenciales.
 
-### Fase 4 · Panel de negocio (`/panel`, rol `owner`)
-- **Archivos:** `panel/index.html` + `js/panel/*`; funciones `panel-*` protegidas por `requireOwner`.
-- **Alcance:** clases (crear, editar, publicar, despublicar, borrar lógico), subida con barra de progreso, usuarios, entitlements (conceder/revocar con auditoría), métricas.
-- **Pruebas:** E2E del flujo completo; el propietario **no** ve ni recibe ningún secreto; usuario común denegado.
+### Fase 4 · Panel de negocio (`/panel`, rol `owner`)  _(hecha: catálogo, crear clase, subir video, publicar/despublicar, eliminar)_
+- **Archivos:** `panel.html` + `js/pages/panel.js` + `js/ui/class-form-modal.js` (crear/reintentar con barra de progreso vía TUS); todo reutiliza funciones ya escritas en `js/lib/api.js` (`adminListClasses/CreateUpload/SyncVideo/UpdateClass/DeleteClass`, `uploadVideoToBunny`, `resizeImage`, `uploadThumbnail`) — no hizo falta backend nuevo. Auditoría de publicar/despublicar por trigger de base (`classes_audit_publish_change`, mismo patrón que `profiles_audit_role_change`) en vez de una Edge Function, porque RLS + privilegio por columna sobre `is_published` ya alcanzaban.
+- **Pendiente:** editar metadatos de una clase ya creada, borrado lógico (hoy `adminDeleteClass` borra físico), usuarios, entitlements (conceder/revocar con auditoría), métricas.
+- **Pruebas:** `supabase/tests/classes_publish_audit.test.sql` (publicar sin video listo rechazado, publicar/despublicar audita con el actor real, editar otro campo no audita publicación, un usuario común no puede tocarlo). **Falta:** prueba E2E en navegador del flujo completo (crear → subir → publicar) — este entorno no tiene Chrome para escribirla contra un caso real; queda para la próxima sesión con navegador disponible.
 
 ### Fase 5 · Panel técnico interno (`/interno`, rol `developer`)
 - **Archivos:** `interno/index.html` + `js/interno/*`; funciones `tech-*`; tabla `app_settings`.

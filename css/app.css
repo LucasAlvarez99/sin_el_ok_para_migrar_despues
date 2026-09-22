@@ -10,7 +10,7 @@
   background: var(--color-primary); border: 2px solid #fff;
 }
 .yp-account-menu {
-  position: fixed; z-index: 1080; min-width: 230px; background: #fff; border: 1px solid var(--color-border);
+  position: fixed; z-index: 1080; min-width: 230px; background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: var(--radius-md); box-shadow: var(--shadow-hover); padding: .4rem; display: grid; gap: .1rem;
 }
 .yp-account-who { padding: .6rem .8rem .7rem; border-bottom: 1px solid var(--color-border); margin-bottom: .3rem; display: grid; }
@@ -28,9 +28,9 @@
 .yp-auth .modal-body { padding: .8rem 1.6rem 1.8rem; }
 .yp-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; background: var(--color-light); padding: .3rem; border-radius: 999px; margin-bottom: 1.2rem; }
 .yp-tab { border: 0; background: transparent; padding: .55rem; border-radius: 999px; font-weight: 600; font-size: .9rem; color: var(--color-text); }
-.yp-tab.active { background: #fff; color: var(--color-primary); box-shadow: var(--shadow-soft); }
+.yp-tab.active { background: var(--color-surface); color: var(--color-primary); box-shadow: var(--shadow-soft); }
 .yp-auth .form-control { border-radius: .8rem; padding: .7rem 1rem; border-color: var(--color-border); }
-.yp-auth .form-control:focus { border-color: var(--color-primary); box-shadow: 0 0 0 .2rem rgba(178, 240, 225, .7); }
+.yp-auth .form-control:focus { border-color: var(--color-primary); box-shadow: 0 0 0 .2rem rgba(182, 203, 193, .7); }
 .yp-link { background: none; border: 0; padding: 0; color: var(--color-primary); font-weight: 600; font-size: .88rem; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .yp-link:hover { color: var(--color-primary-dark); }
 .yp-auth-note { color: var(--color-text-muted); font-size: .92rem; }
@@ -39,7 +39,7 @@
 /* ===== Avisos ===== */
 .yp-toasts { position: fixed; z-index: 1100; right: 1rem; bottom: 1rem; display: grid; gap: .6rem; width: min(360px, calc(100vw - 2rem)); }
 .yp-toast {
-  display: flex; align-items: flex-start; gap: .7rem; background: #fff; border: 1px solid var(--color-border);
+  display: flex; align-items: flex-start; gap: .7rem; background: var(--color-surface); border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-primary); border-radius: .8rem; padding: .8rem .9rem; box-shadow: var(--shadow-hover); font-size: .92rem;
 }
 .yp-toast span { flex: 1; }
@@ -102,7 +102,7 @@
 .yp-spinner .spinner-border { color: var(--color-mint); width: 3rem; height: 3rem; }
 
 .yp-resume { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: .6rem; white-space: nowrap;
-  background: rgba(23,51,47,.88); border-radius: 999px; padding: .5rem 1rem; font-size: .88rem; backdrop-filter: blur(6px); }
+  background: rgba(74,64,54,.88); border-radius: 999px; padding: .5rem 1rem; font-size: .88rem; backdrop-filter: blur(6px); }
 .yp-resume[hidden], .yp-error[hidden], .yp-menu[hidden] { display: none; }
 .yp-resume .yp-link { color: var(--color-mint); }
 
@@ -124,7 +124,7 @@
 .yp-seek { position: relative; width: 100%; height: 18px; }
 .yp-seek::-webkit-slider-runnable-track, .yp-volume::-webkit-slider-runnable-track { background: transparent; height: 18px; }
 .yp-seek::-moz-range-track, .yp-volume::-moz-range-track { background: transparent; }
-.yp-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(178,240,225,.5); }
+.yp-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(182,203,193,.5); }
 .yp-seek::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
 .yp-seek:disabled { cursor: default; opacity: .5; }
 
@@ -144,7 +144,7 @@
 .yp-time { font-size: .85rem; font-variant-numeric: tabular-nums; margin-left: .4rem; white-space: nowrap; }
 
 .yp-menuwrap { position: relative; }
-.yp-menu { position: absolute; right: 0; bottom: 48px; min-width: 130px; background: rgba(23,51,47,.96); border-radius: .8rem; padding: .3rem; display: grid; }
+.yp-menu { position: absolute; right: 0; bottom: 48px; min-width: 130px; background: rgba(74,64,54,.96); border-radius: .8rem; padding: .3rem; display: grid; }
 .yp-menu-item { background: none; border: 0; color: #fff; text-align: left; padding: .5rem .8rem; border-radius: .5rem; font-size: .85rem; }
 .yp-menu-item:hover { background: rgba(255,255,255,.14); }
 .yp-menu-item[aria-checked="true"] { color: var(--color-mint); font-weight: 700; }
@@ -158,5 +158,6 @@
 @media (prefers-reduced-motion: reduce) { .yp-skeleton { animation: none; } .yp-controls, .yp-bigplay { transition: none; } }
 
 /* ===== Cuenta ===== */
-.yp-card { background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.6rem; box-shadow: var(--shadow-soft); height: 100%; }
+.yp-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.6rem; box-shadow: var(--shadow-soft); height: 100%; }
 .yp-card .form-control { border-radius: .8rem; padding: .7rem 1rem; border-color: var(--color-border); }
+.progress-bar.bg-brand { background-color: var(--color-primary); }
