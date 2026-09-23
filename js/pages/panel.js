@@ -124,13 +124,20 @@ function renderTable() {
   if (classes.length === 0) {
     return mount(root, newClassButton(), emptyState('Todavía no hay clases', 'Creá la primera con el botón de arriba.'));
   }
-  mount(root, newClassButton(),
-    el('div', { class: 'table-responsive' },
-      el('table', { class: 'table align-middle' },
-        el('thead', {}, el('tr', {},
-          el('th', {}, 'Clase'), el('th', {}, 'Nivel'), el('th', {}, 'Video'), el('th', {}, 'Estado'),
-          el('th', {}, 'Actualizada'), el('th', { class: 'text-end' }, ''))),
-        el('tbody', {}, ...classes.map(classRow)))));
+  const scrollHint = el('p', { class: 'table-scroll-hint', hidden: true }, icon('arrow-left-right'), ' Desliza para ver más');
+  const wrap = el('div', { class: 'table-responsive' },
+    el('table', { class: 'table align-middle' },
+      el('thead', {}, el('tr', {},
+        el('th', {}, 'Clase'), el('th', {}, 'Nivel'), el('th', {}, 'Video'), el('th', {}, 'Estado'),
+        el('th', {}, 'Actualizada'), el('th', { class: 'text-end' }, ''))),
+      el('tbody', {}, ...classes.map(classRow))));
+  mount(root, newClassButton(), scrollHint, wrap);
+
+  // Aviso de scroll horizontal SOLO si la tabla no entra completa; desaparece en cuanto se usa.
+  const syncHint = () => { scrollHint.hidden = wrap.scrollWidth <= wrap.clientWidth + 1; };
+  syncHint();
+  window.addEventListener('resize', syncHint);
+  wrap.addEventListener('scroll', () => { scrollHint.hidden = true; }, { once: true });
 }
 
 async function loadClasses() {

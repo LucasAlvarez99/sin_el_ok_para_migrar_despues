@@ -67,11 +67,11 @@ export function openClassForm({ mode = 'create', row = null } = {}) {
       field('cfTitle', 'Título', el('input', { class: 'form-control', id: 'cfTitle', required: true, maxlength: 150 })),
       field('cfDescription', 'Descripción', el('textarea', { class: 'form-control', id: 'cfDescription', rows: 3, maxlength: 5000 })),
       el('div', { class: 'row' },
-        el('div', { class: 'col-6' }, field('cfCategory', 'Categoría', el('input', { class: 'form-control', id: 'cfCategory', maxlength: 60 }))),
-        el('div', { class: 'col-6' }, field('cfSort', 'Orden', el('input', { class: 'form-control', id: 'cfSort', type: 'number', value: '0', step: '1' })))),
+        el('div', { class: 'col-12 col-sm-6' }, field('cfCategory', 'Categoría', el('input', { class: 'form-control', id: 'cfCategory', maxlength: 60 }))),
+        el('div', { class: 'col-12 col-sm-6' }, field('cfSort', 'Orden', el('input', { class: 'form-control', id: 'cfSort', type: 'number', value: '0', step: '1' })))),
       el('div', { class: 'row' },
-        el('div', { class: 'col-6' }, field('cfLevel', 'Nivel', levelSelect('todos'))),
-        el('div', { class: 'col-6' }, field('cfAccess', 'Acceso', accessSelect('free')))),
+        el('div', { class: 'col-12 col-sm-6' }, field('cfLevel', 'Nivel', levelSelect('todos'))),
+        el('div', { class: 'col-12 col-sm-6' }, field('cfAccess', 'Acceso', accessSelect('free')))),
       field('cfThumb', 'Miniatura (opcional)', el('input', { class: 'form-control', id: 'cfThumb', type: 'file', accept: 'image/jpeg,image/png,image/webp' })),
     ];
 

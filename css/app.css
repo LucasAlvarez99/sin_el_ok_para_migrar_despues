@@ -43,8 +43,8 @@
   border-left: 4px solid var(--color-primary); border-radius: .8rem; padding: .8rem .9rem; box-shadow: var(--shadow-hover); font-size: .92rem;
 }
 .yp-toast span { flex: 1; }
-.yp-toast-error { border-left-color: #b3261e; }
-.yp-toast-error > .bi:first-child { color: #b3261e; }
+.yp-toast-error { border-left-color: var(--terracota); }
+.yp-toast-error > .bi:first-child { color: var(--terracota); }
 .yp-toast-success > .bi:first-child { color: var(--color-primary); }
 .yp-toast-x { background: none; border: 0; color: var(--color-text-muted); padding: 0; }
 
@@ -79,11 +79,15 @@
 .clase-meta { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0 1rem; }
 .clase-title { font-size: clamp(1.5rem, 2.8vw, 2.1rem); font-weight: 700; margin: 0; }
 .clase-desc { color: var(--color-text-muted); white-space: pre-line; }
-.clase-stage { aspect-ratio: 16 / 9; border-radius: var(--radius-md); overflow: hidden; background: var(--color-deep, #17332f); box-shadow: var(--shadow-soft); }
+.clase-stage { aspect-ratio: 16 / 9; border-radius: var(--radius-md); overflow: hidden; background: var(--color-deep); box-shadow: var(--shadow-soft); }
 .clase-gate { height: 100%; display: grid; place-content: center; text-align: center; gap: .6rem; padding: 1.5rem; color: #fff; }
 .clase-gate .bi { font-size: 2.4rem; color: var(--color-mint); }
 .clase-gate p { margin: 0; color: rgba(255,255,255,.85); max-width: 42ch; }
 .clase-gate .btn { justify-self: center; }
+/* .btn-brand (fondo tinta) se funde con el escenario oscuro (también tinta): dentro del gate se
+   invierte a salvia sólido para que el botón se distinga como tal, sea cual sea el mensaje. */
+.clase-gate .btn-brand { background: var(--salvia); color: var(--tinta); border-color: var(--salvia); }
+.clase-gate .btn-brand:hover { background: var(--blanco-calido); border-color: var(--blanco-calido); color: var(--tinta); }
 .clase-side { display: grid; gap: 1rem; align-content: start; }
 
 /* ===== Reproductor ===== */
@@ -106,11 +110,11 @@
 .yp-resume[hidden], .yp-error[hidden], .yp-menu[hidden] { display: none; }
 .yp-resume .yp-link { color: var(--color-mint); }
 
-.yp-error { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: .6rem; text-align: center; padding: 1.5rem; background: rgba(0,0,0,.78); }
+.yp-error { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: .6rem; text-align: center; padding: 1.5rem; background: rgba(74,64,54,.85); }
 .yp-error-ico { font-size: 2.2rem; color: var(--color-mint); }
 .yp-error-msg { margin: 0; max-width: 40ch; }
 
-.yp-controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 2.2rem .9rem .6rem; background: linear-gradient(transparent, rgba(0,0,0,.72)); transition: opacity .3s var(--ease); }
+.yp-controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 2.2rem .9rem .6rem; background: linear-gradient(transparent, rgba(74,64,54,.78)); transition: opacity .3s var(--ease); }
 .yp-player.yp-idle .yp-controls { opacity: 0; pointer-events: none; }
 .yp-player.yp-idle { cursor: none; }
 .yp-player[data-state="loading"] .yp-controls, .yp-player[data-state="error"] .yp-controls { opacity: .35; pointer-events: none; }
@@ -161,3 +165,7 @@
 .yp-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.6rem; box-shadow: var(--shadow-soft); height: 100%; }
 .yp-card .form-control { border-radius: .8rem; padding: .7rem 1rem; border-color: var(--color-border); }
 .progress-bar.bg-brand { background-color: var(--color-primary); }
+
+/* ===== Panel: tabla de clases ===== */
+.table-scroll-hint { display: flex; align-items: center; gap: .4rem; color: var(--color-text-muted); font-size: .82rem; margin: -.4rem 0 .6rem; }
+@media (min-width: 992px) { .table-scroll-hint { display: none; } }

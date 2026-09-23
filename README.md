@@ -18,8 +18,12 @@ web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos 
 > auditoría que nadie puede editar ni borrar, cambios de rol solo por desarrolladores y protección del último desarrollador.
 > **Fase 2 (cuentas reales) preparada:** guía, `npm run doctor[:online]` y una prueba de integración real que se ejecuta
 > sola cuando existan las credenciales (`npm run test:integration`). **Falta que el cliente cree las cuentas.**
+> **Panel de negocio (`panel.html`), primera parte:** listar clases, crear, subir el video (con progreso), publicar,
+> despublicar y eliminar, protegido por rol y con auditoría. **Identidad visual:** logo real (`assets/logo-claro.png` /
+> `logo-oscuro.png`) en navbar, pie y favicon; paleta verificada contra el manual de marca; redes sociales reales
+> (WhatsApp, Instagram, YouTube) en los pies de página.
 >
-> **Aún no existe:** paneles de gestión (negocio y técnico), reconciliación programada, pagos y tienda.
+> **Aún no existe:** panel técnico interno (solo desarrolladores), reconciliación programada, pagos y tienda.
 >
 > ```bash
 > nvm use && npm ci                              # instalación reproducible

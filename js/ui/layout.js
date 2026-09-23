@@ -1,5 +1,6 @@
 import { el, icon } from '../lib/dom.js';
 import { page } from '../lib/env.js';
+import { SOCIAL_LINKS } from '../lib/social-links.js';
 
 /** Encabezado y pie de las páginas nuevas: mismo marcado y clases que index.html. */
 const NAV = [
@@ -12,7 +13,8 @@ const NAV = [
 ];
 
 const brand = (cls = '') => el('a', { class: `brand ${cls}`.trim(), href: page('index.html'), 'aria-label': 'Yoga Pop Up' },
-  el('span', { class: 'brand-mark' }, icon('flower1')), el('span', { class: 'brand-text' }, 'Yoga Pop Up'));
+  el('span', { class: 'brand-mark' }, el('img', { src: page('assets/logo-claro.png'), alt: '', width: 360, height: 379 })),
+  el('span', { class: 'brand-text' }, 'Yoga Pop Up'));
 
 /** @param {string} active  'videoteca' | 'cuenta' | ... */
 export function renderLayout(active) {
@@ -40,13 +42,18 @@ export function renderLayout(active) {
     const col = (title, label, items) => el('nav', { class: 'col-6 col-lg-3', 'aria-label': label },
       el('h4', {}, title),
       el('ul', {}, ...items.map(([text, href]) => el('li', {}, el('a', { href: page(href) }, text)))));
+    const socials = el('div', { class: 'col-lg-3' },
+      el('h4', {}, 'Seguinos'),
+      el('div', { class: 'socials' }, ...SOCIAL_LINKS.map(({ label, href, iconName }) =>
+        el('a', { href, target: '_blank', rel: 'noopener', 'aria-label': label }, icon(iconName)))));
     footer.className = 'site-footer';
     footer.replaceChildren(el('div', { class: 'container-xl' },
       el('div', { class: 'row g-4 align-items-start' },
         el('div', { class: 'col-lg-6' }, brand(),
           el('p', { class: 'footer-note' }, 'Yoga & Conexión. Te acompañamos a habitar tu cuerpo con presencia, libertad y disfrute.')),
         col('Yoga Pop Up', 'Navegación', NAV.slice(0, 4)),
-        col('Más', 'Más', NAV.slice(4))),
+        col('Más', 'Más', NAV.slice(4)),
+        socials),
       el('p', { class: 'copyright' }, `© ${new Date().getFullYear()} Yoga Pop Up. Todos los derechos reservados.`)));
   }
 }

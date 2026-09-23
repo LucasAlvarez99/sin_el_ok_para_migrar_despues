@@ -97,6 +97,13 @@ Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba
 4. **Envíos (Fase 7).** ¿Solo España peninsular o también islas/UE?
 5. **Datos de ejemplo.** Hasta que existan pagos y tienda, las secciones "Cursos" y "Merchandising" muestran contenido inventado. Regla del proyecto: **no dejar datos falsos**. ¿Las oculto o las marco como "Próximamente"?
 6. **Legales.** Política de privacidad, términos y cookies (los redacta el cliente o su asesor); necesarios antes de abrir el registro.
+7. **Información del negocio (retoque de estilos, 22/09/2026).** El manual de marca ("Pautas para la web") sugiere una
+   estructura distinta a la actual: Inicio · Clases (privadas y online) · Ropa (líneas "Set Marea", "Set Duna") ·
+   Dónde encontrarme (feria Las Dalias, lunes y martes de 19 a 00 h; envíos por Europa) · Contacto. Eso es contenido
+   y arquitectura de información, no un estilo, así que no lo apliqué sin tu confirmación: cambiaría "Cursos" y
+   "Merchandising" por productos y una feria física concretos. Si el negocio real es así, decímelo y lo sumo en una
+   fase aparte (con fotos y datos reales, no inventados). Lo que sí se aplicó ya de esa guía: logo, paleta, botones
+   (secundario en salvia, destacado en tinta), separadores finos y las redes sociales reales.
 
 ## 5. Riesgos
 

@@ -3,7 +3,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 1) Aparición suave al hacer scroll
   const items = document.querySelectorAll('.reveal');
-  if ('IntersectionObserver' in window) {
+  // Si se llega con un ancla (p. ej. index.html#tienda, como enlazan el menú y el pie de las demás
+  // páginas), el navegador salta directo a esa sección antes de que el scroll dispare la animación:
+  // sin este atajo, las tarjetas que ya están a la vista quedan invisibles y no hay forma de revelarlas.
+  if (location.hash) {
+    items.forEach((el) => el.classList.add('is-visible'));
+  } else if ('IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); }
