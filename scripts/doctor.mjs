@@ -66,11 +66,11 @@ async function onlineChecks() {
   const cat = await get(`${base}/rest/v1/classes?select=id&limit=1`, { headers });
   cat.status === 200 ? R('ok', 'Catálogo público (RLS)', 'el catálogo publicado se lee sin sesión') : R('fail', 'Catálogo público (RLS)', `estado ${cat.status}: ¿se aplicaron las migraciones? (npm run sb:db-push)`);
 
-  // Privacidad: pedir columnas de Bunny desde el navegador DEBE estar denegado.
-  const priv = await get(`${base}/rest/v1/classes?select=bunny_video_id&limit=1`, { headers });
+  // Privacidad: pedir la key de R2 desde el navegador DEBE estar denegado.
+  const priv = await get(`${base}/rest/v1/classes?select=r2_object_key&limit=1`, { headers });
   [401, 403].includes(priv.status)
-    ? R('ok', 'Columnas de Bunny ocultas', `denegadas al navegador (${priv.status})`)
-    : R('fail', 'Columnas de Bunny ocultas', `¡el navegador PUEDE leer bunny_video_id (estado ${priv.status})! Revisa los privilegios por columna.`);
+    ? R('ok', 'Columna de R2 oculta', `denegada al navegador (${priv.status})`)
+    : R('fail', 'Columna de R2 oculta', `¡el navegador PUEDE leer r2_object_key (estado ${priv.status})! Revisa los privilegios por columna.`);
 
   const auth = await get(`${fn}/playback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   auth.status === 401 ? R('ok', 'playback sin sesión', '401 (correcto)') : R('fail', 'playback sin sesión', `estado ${auth.status}: debía ser 401`);

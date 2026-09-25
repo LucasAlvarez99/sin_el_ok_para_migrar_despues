@@ -1,7 +1,7 @@
 import { el, mount } from '../lib/dom.js';
 import { LEVEL_LABELS } from '../lib/format.js';
 import { messageFor } from '../lib/errors.js';
-import { adminCreateUpload, adminSyncVideo, adminUpdateClass, resizeImage, uploadThumbnail, uploadVideoToBunny } from '../lib/api.js';
+import { adminCreateUpload, adminSyncVideo, adminUpdateClass, readVideoDuration, resizeImage, uploadThumbnail, uploadVideoToR2 } from '../lib/api.js';
 import { toast } from './toast.js';
 
 /**
@@ -122,10 +122,13 @@ export function openClassForm({ mode = 'create', row = null } = {}) {
         }
       }
 
+      // R2 no calcula la duración (no transcodifica): se lee en el navegador antes de subir.
+      let duration = null;
+      try { duration = await readVideoDuration(videoFile); } catch { /* se guarda sin duración; se puede corregir después */ }
+
       cancelBtn.classList.remove('d-none');
       cancelBtn.onclick = () => { aborted = true; aborter?.(); };
-      const { promise, abort } = uploadVideoToBunny(videoFile, upload, {
-        title,
+      const { promise, abort } = uploadVideoToR2(videoFile, upload, {
         onProgress: (sent, total) => {
           const pct = total ? Math.round((sent / total) * 100) : 0;
           barBox.style.width = `${pct}%`;
@@ -135,12 +138,11 @@ export function openClassForm({ mode = 'create', row = null } = {}) {
       aborter = abort;
       await promise;
 
-      try {
-        await adminSyncVideo(cls.id);
-      } catch { /* red de seguridad: si falla, el webhook lo va a reflejar igual */ }
+      progressText.textContent = 'Confirmando la subida…';
+      await adminSyncVideo(cls.id, duration);
 
       closeModal();
-      toast(mode === 'retry' ? 'Video subido. Se está procesando.' : 'Clase creada. El video se está procesando.', { type: 'success' });
+      toast(mode === 'retry' ? 'Video subido.' : 'Clase creada y video subido.', { type: 'success' });
       resolveOpen(true);
     } catch (err) {
       progressBox.classList.add('d-none');

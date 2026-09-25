@@ -5,7 +5,7 @@ import { AppError } from './errors.js';
 
 /**
  * Acceso a datos y a las Edge Functions.
- * Regla: con `classes` NUNCA usar select('*'): las columnas de Bunny están restringidas en la base
+ * Regla: con `classes` NUNCA usar select('*'): la key de R2 está restringida en la base
  * (privilegios por columna) y pedirlas falla. Por eso las columnas se listan explícitamente.
  */
 export const CLASS_COLUMNS =
@@ -98,7 +98,8 @@ export async function adminListClasses() {
 }
 
 export const adminCreateUpload = (payload) => callFunction('admin-create-upload', payload);
-export const adminSyncVideo = (classId) => callFunction('admin-sync-video', { class_id: classId });
+export const adminSyncVideo = (classId, durationSeconds) =>
+  callFunction('admin-sync-video', { class_id: classId, duration_seconds: durationSeconds ?? undefined });
 export const adminDeleteClass = (classId) => callFunction('admin-delete-class', { class_id: classId });
 
 const EDITABLE = ['title', 'description', 'thumbnail_url', 'level', 'category', 'access_level', 'sort_order', 'is_published'];
@@ -133,36 +134,40 @@ export async function deleteThumbnailByUrl(url) {
   await db().storage.from(THUMB_BUCKET).remove([decodeURIComponent(url.slice(i + marker.length).split('?')[0])]);
 }
 
-// ---------------------------------------------------------------- subida del video (TUS directo a Bunny)
+// ---------------------------------------------------------------- subida del video (PUT directo a R2)
 /**
- * Sube el archivo directo a Bunny con credenciales prefirmadas (el archivo no pasa por el backend).
- * Reanudable: si la subida se corta, al reintentar retoma desde donde quedó.
+ * Sube el archivo directo a R2 con la URL prefirmada que dio admin-create-upload
+ * (el archivo no pasa por el backend). A diferencia de Bunny (TUS), es un PUT simple:
+ * si la subida se corta, hay que volver a pedir credenciales y subir el archivo entero de nuevo.
  * @returns {{ promise: Promise<void>, abort: () => void }}
  */
-export function uploadVideoToBunny(file, creds, { title, onProgress } = {}) {
-  if (!window.tus) throw new AppError('internal_error', 'Falta la librería de subida.');
-  let upload;
+export function uploadVideoToR2(file, upload, { onProgress } = {}) {
+  const xhr = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
-    upload = new window.tus.Upload(file, {
-      endpoint: creds.endpoint,
-      retryDelays: [0, 3000, 5000, 10000, 20000, 30000],
-      headers: {
-        AuthorizationSignature: creds.signature,
-        AuthorizationExpire: String(creds.expire),
-        VideoId: creds.videoId,
-        LibraryId: creds.libraryId,
-      },
-      metadata: { filetype: file.type || 'video/mp4', title: title || file.name },
-      onError: (err) => reject(new AppError('upload_failed', `La subida falló: ${err?.message || 'error de red'}`)),
-      onProgress: (sent, total) => onProgress?.(sent, total),
-      onSuccess: () => resolve(),
-    });
-    upload.findPreviousUploads().then((prev) => {
-      if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
-      upload.start();
-    }).catch(() => upload.start());
+    xhr.open('PUT', upload.url, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded, e.total); };
+    xhr.onerror = () => reject(new AppError('upload_failed', 'La subida falló: error de red.'));
+    xhr.onabort = () => reject(new AppError('upload_failed', 'Subida cancelada.'));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new AppError('upload_failed', `La subida falló (estado ${xhr.status}).`));
+    };
+    xhr.send(file);
   });
-  return { promise, abort: () => upload?.abort(true) };
+  return { promise, abort: () => xhr.abort() };
+}
+
+/** Duración del video, leída en el navegador (R2 no la calcula: no transcodifica). */
+export function readVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(v.duration); };
+    v.onerror = () => { URL.revokeObjectURL(url); reject(new AppError('invalid_input', 'No se pudo leer el archivo de video.')); };
+    v.src = url;
+  });
 }
 
 /** Reduce una imagen a un ancho máximo y la convierte a WebP (ahorra almacenamiento y ancho de banda). */

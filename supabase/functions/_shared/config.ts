@@ -1,4 +1,4 @@
-import type { BunnyConfig } from "./bunny/bunny.types.ts";
+import type { R2Config } from "./r2/r2.types.ts";
 import type { AppConfig } from "./ports.ts";
 
 type Env = Record<string, string | undefined>;
@@ -22,11 +22,11 @@ function intOr(env: Env, name: string, fallback: number, min: number, max: numbe
 /**
  * Lee la configuración desde variables de entorno del backend.
  * SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY las inyecta Supabase solo.
- * Las BUNNY_* se cargan con `supabase secrets set`. Nada de esto va al frontend.
+ * Las R2_* se cargan con `supabase secrets set`. Nada de esto va al frontend.
  */
 export function loadConfig(env: Env): {
   app: AppConfig;
-  bunny: BunnyConfig;
+  r2: R2Config;
   supabase: { url: string; anonKey: string; serviceRoleKey: string };
 } {
   return {
@@ -35,18 +35,16 @@ export function loadConfig(env: Env): {
       anonKey: required(env, "SUPABASE_ANON_KEY"),
       serviceRoleKey: required(env, "SUPABASE_SERVICE_ROLE_KEY"),
     },
-    bunny: {
-      apiKey: required(env, "BUNNY_API_KEY"),
-      libraryId: required(env, "BUNNY_LIBRARY_ID"),
-      cdnHostname: required(env, "BUNNY_CDN_HOSTNAME"),
-      tokenAuthKey: required(env, "BUNNY_TOKEN_AUTH_KEY"),
-      readOnlyApiKey: env.BUNNY_READONLY_API_KEY?.trim() || undefined,
+    r2: {
+      accountId: required(env, "R2_ACCOUNT_ID"),
+      accessKeyId: required(env, "R2_ACCESS_KEY_ID"),
+      secretAccessKey: required(env, "R2_SECRET_ACCESS_KEY"),
+      bucket: required(env, "R2_BUCKET"),
     },
     app: {
       allowedOrigins: (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
       playbackTtlSeconds: intOr(env, "PLAYBACK_TTL_SECONDS", 2 * 3600, 60, 24 * 3600),
       uploadTtlSeconds: intOr(env, "UPLOAD_TTL_SECONDS", 4 * 3600, 300, 24 * 3600),
-      webhookSecret: env.BUNNY_READONLY_API_KEY?.trim() || null,
     },
   };
 }

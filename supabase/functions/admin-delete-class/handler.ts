@@ -4,12 +4,12 @@ import type { HandlerDeps } from "../_shared/ports.ts";
 
 /**
  * POST { class_id }
- * Solo admin. Borra el video en Bunny y luego la clase (el progreso y los permisos
- * asociados se eliminan en cascada). Si Bunny falla, NO se borra la clase: el admin puede
- * reintentar y no quedan videos huérfanos ocupando (y cobrando) almacenamiento.
+ * Solo admin. Borra el objeto de video en R2 y luego la clase (el progreso y los permisos
+ * asociados se eliminan en cascada). Si R2 falla, NO se borra la clase: el admin puede
+ * reintentar y no quedan objetos huérfanos ocupando (y cobrando) almacenamiento.
  */
 export function createHandler(deps: HandlerDeps) {
-  const { bunny, repo, auth, audit, config } = deps;
+  const { r2, repo, auth, audit, config } = deps;
 
   return createEndpoint({
     methods: ["POST"],
@@ -27,11 +27,11 @@ export function createHandler(deps: HandlerDeps) {
         action: "class.delete",
         entityType: "class",
         entityId: row.id,
-        details: { title: row.title, had_video: row.bunny_video_id !== null, was_published: row.is_published },
+        details: { title: row.title, had_video: row.r2_object_key !== null, was_published: row.is_published },
       });
 
       let videoDeleted = false;
-      if (row.bunny_video_id) videoDeleted = await bunny.deleteVideo(row.bunny_video_id);
+      if (row.r2_object_key) videoDeleted = await r2.deleteObject(row.r2_object_key);
 
       await repo.deleteClass(row.id);
 

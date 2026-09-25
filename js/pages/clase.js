@@ -79,11 +79,11 @@ function mountPlayer(cls, pb) {
     poster: cls.thumbnail_url || undefined,
     resumeAt: pb.resume_seconds,
     durationHint,
-    source: { hlsUrl: pb.hls_url, expiresAt: pb.expires_at },
+    source: { url: pb.video_url, expiresAt: pb.expires_at },
     // La URL firmada vence: el reproductor pide otra al servidor (que vuelve a comprobar el permiso).
     getSource: async () => {
       const fresh = await getPlayback(classId);
-      return { hlsUrl: fresh.hls_url, expiresAt: fresh.expires_at };
+      return { url: fresh.video_url, expiresAt: fresh.expires_at };
     },
     onTime: (t, d, playing) => reporter?.update(t, d, playing),
     onPause: () => reporter?.flush('pause'),

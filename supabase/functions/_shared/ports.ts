@@ -1,13 +1,13 @@
 /**
- * Puertos (interfaces) que separan la lógica de negocio de Supabase y de Bunny.
- * En producción los implementan repo.supabase.ts / auth.supabase.ts / BunnyService.
+ * Puertos (interfaces) que separan la lógica de negocio de Supabase y de R2.
+ * En producción los implementan repo.supabase.ts / auth.supabase.ts / R2Service.
  * En los tests se reemplazan por versiones en memoria.
  */
-import type { BunnyService } from "./bunny/bunny.service.ts";
+import type { R2Service } from "./r2/r2.service.ts";
 import type { AccessLevel, Level } from "./validate.ts";
-import type { ClassVideoStatus } from "./bunny/bunny.types.ts";
+import type { ClassVideoStatus } from "./r2/r2.types.ts";
 
-/** Fila completa de public.classes tal como la ve el BACKEND (incluye campos de Bunny). */
+/** Fila completa de public.classes tal como la ve el BACKEND (incluye la key de R2). */
 export interface ClassRow {
   id: string;
   title: string;
@@ -20,18 +20,17 @@ export interface ClassRow {
   sort_order: number;
   is_published: boolean;
   video_status: ClassVideoStatus;
-  bunny_video_id: string | null;
-  bunny_library_id: string | null;
+  r2_object_key: string | null;
   created_at: string;
   updated_at: string;
 }
 
-/** Lo que se le devuelve a un cliente: sin identificadores de Bunny. */
-export type PublicClass = Omit<ClassRow, "bunny_video_id" | "bunny_library_id">;
+/** Lo que se le devuelve a un cliente: sin la key interna de R2. */
+export type PublicClass = Omit<ClassRow, "r2_object_key">;
 
 export function toPublicClass(row: ClassRow): PublicClass {
   // deno-lint-ignore no-unused-vars
-  const { bunny_video_id, bunny_library_id, ...rest } = row;
+  const { r2_object_key, ...rest } = row;
   return rest;
 }
 
@@ -43,8 +42,7 @@ export interface NewClass {
   access_level: AccessLevel;
   sort_order: number;
   created_by: string;
-  bunny_video_id: string;
-  bunny_library_id: string;
+  r2_object_key: string;
 }
 
 export interface VideoStatePatch {
@@ -61,17 +59,11 @@ export interface ProgressRow {
 export interface ClassRepo {
   insertClass(input: NewClass): Promise<ClassRow>;
   getClass(id: string): Promise<ClassRow | null>;
-  getClassByBunnyVideoId(videoId: string): Promise<ClassRow | null>;
-  /** Asocia un video SOLO si la clase todavía no tiene uno. Devuelve null si ya tenía. */
-  attachVideo(
-    classId: string,
-    video: { bunny_video_id: string; bunny_library_id: string },
-  ): Promise<ClassRow | null>;
-  /** Reemplaza el video de una clase cuyo video quedó en "failed". Devuelve null si ya no está en ese estado. */
-  replaceFailedVideo(
-    classId: string,
-    video: { bunny_video_id: string; bunny_library_id: string },
-  ): Promise<ClassRow | null>;
+  getClassByObjectKey(key: string): Promise<ClassRow | null>;
+  /** Asocia una key de R2 SOLO si la clase todavía no tiene una. Devuelve null si ya tenía. */
+  attachVideo(classId: string, video: { r2_object_key: string }): Promise<ClassRow | null>;
+  /** Reemplaza la key de una clase cuyo video quedó en "failed". Devuelve null si ya no está en ese estado. */
+  replaceFailedVideo(classId: string, video: { r2_object_key: string }): Promise<ClassRow | null>;
   updateVideoState(classId: string, patch: VideoStatePatch): Promise<ClassRow>;
   /** Borra (mejor esfuerzo) la miniatura de Storage si la URL es de nuestro bucket. */
   deleteThumbnail(url: string | null): Promise<void>;
@@ -98,23 +90,15 @@ export interface AuthPort {
   requireDeveloper(req: Request): Promise<AuthedUser>;
 }
 
-export type BunnyPort = Pick<
-  BunnyService,
-  | "createVideo"
-  | "getVideo"
-  | "getVideoOrNull"
-  | "deleteVideo"
-  | "createUploadCredentials"
-  | "signPlayback"
-  | "libraryId"
+export type R2Port = Pick<
+  R2Service,
+  "newObjectKey" | "createUploadUrl" | "headObject" | "deleteObject" | "signPlayback" | "bucket"
 >;
 
 export interface AppConfig {
   allowedOrigins: string[];
   playbackTtlSeconds: number;
   uploadTtlSeconds: number;
-  /** Clave de solo lectura de la librería Bunny (firma de webhooks). */
-  webhookSecret: string | null;
 }
 
 /** Historial de auditoría (solo inserción). Las operaciones destructivas fallan si no se puede registrar. */
@@ -131,7 +115,7 @@ export interface AuditPort {
 }
 
 export interface HandlerDeps {
-  bunny: BunnyPort;
+  r2: R2Port;
   repo: ClassRepo;
   auth: AuthPort;
   audit: AuditPort;

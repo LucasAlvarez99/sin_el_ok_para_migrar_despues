@@ -1,4 +1,4 @@
-import { BunnyService } from "./bunny/bunny.service.ts";
+import { R2Service } from "./r2/r2.service.ts";
 import { loadConfig } from "./config.ts";
 import { createSupabaseRepo } from "./repo.supabase.ts";
 import { createSupabaseAuth } from "./auth.supabase.ts";
@@ -10,7 +10,7 @@ import type { HandlerDeps } from "./ports.ts";
 export function buildDeps(env: Record<string, string | undefined> = Deno.env.toObject()): HandlerDeps {
   const cfg = loadConfig(env);
   return {
-    bunny: new BunnyService(cfg.bunny),
+    r2: new R2Service(cfg.r2),
     repo: createSupabaseRepo(cfg.supabase.url, cfg.supabase.serviceRoleKey),
     auth: createSupabaseAuth(cfg.supabase.url, cfg.supabase.anonKey),
     audit: createSupabaseAudit(cfg.supabase.url, cfg.supabase.serviceRoleKey),

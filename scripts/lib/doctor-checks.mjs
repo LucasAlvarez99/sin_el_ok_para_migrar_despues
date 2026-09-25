@@ -49,21 +49,17 @@ export function checkBackendEnv(env = {}) {
   const out = [];
   const need = (k) => String(env[k] || '').trim();
 
-  const lib = need('BUNNY_LIBRARY_ID');
-  out.push(!lib ? fail('BUNNY_LIBRARY_ID', 'falta') : !/^\d+$/.test(lib) ? fail('BUNNY_LIBRARY_ID', 'debe ser numérico') : ok('BUNNY_LIBRARY_ID', lib));
+  const accountId = need('R2_ACCOUNT_ID');
+  out.push(!accountId ? fail('R2_ACCOUNT_ID', 'falta') : ok('R2_ACCOUNT_ID', accountId));
 
-  for (const k of ['BUNNY_API_KEY', 'BUNNY_READONLY_API_KEY', 'BUNNY_TOKEN_AUTH_KEY']) {
+  for (const k of ['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
     out.push(need(k) ? ok(k, 'presente') : fail(k, 'falta'));
   }
-  if (need('BUNNY_API_KEY') && need('BUNNY_API_KEY') === need('BUNNY_READONLY_API_KEY')) {
-    out.push(warn('BUNNY_READONLY_API_KEY', 'es igual a la clave de escritura; debe ser la de SOLO LECTURA de la librería'));
-  }
 
-  const host = need('BUNNY_CDN_HOSTNAME');
-  if (!host) out.push(fail('BUNNY_CDN_HOSTNAME', 'falta'));
-  else if (/^https?:\/\//.test(host) || host.includes('/')) out.push(fail('BUNNY_CDN_HOSTNAME', 'sin "https://" ni barras: solo vz-xxxx.b-cdn.net'));
-  else if (!/\.b-cdn\.net$/.test(host)) out.push(warn('BUNNY_CDN_HOSTNAME', 'no termina en .b-cdn.net (¿dominio propio? asegúrate de que tenga la autenticación por token)'));
-  else out.push(ok('BUNNY_CDN_HOSTNAME', host));
+  const bucket = need('R2_BUCKET');
+  if (!bucket) out.push(fail('R2_BUCKET', 'falta'));
+  else if (/^https?:\/\//.test(bucket) || bucket.includes('/')) out.push(fail('R2_BUCKET', 'debe ser solo el nombre del bucket, sin URL ni barras'));
+  else out.push(ok('R2_BUCKET', bucket));
 
   const origins = need('ALLOWED_ORIGINS').split(',').map((s) => s.trim()).filter(Boolean);
   if (origins.length === 0) out.push(fail('ALLOWED_ORIGINS', 'vacío: el navegador no podrá llamar a las funciones (CORS)'));

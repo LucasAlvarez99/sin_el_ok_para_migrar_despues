@@ -1,4 +1,4 @@
-import { BunnyError } from "./bunny/bunny.service.ts";
+import { R2Error } from "./r2/r2.service.ts";
 
 /** Error "esperado" que se traduce a una respuesta HTTP con código estable. */
 export class HttpError extends Error {
@@ -75,8 +75,8 @@ export function createEndpoint(opts: EndpointOptions): (req: Request) => Promise
       if (e instanceof HttpError) {
         return json({ error: { code: e.code, message: e.message } }, e.status, cors);
       }
-      if (e instanceof BunnyError) {
-        console.error(`[bunny] ${e.operation} failed status=${e.status}: ${e.message}`);
+      if (e instanceof R2Error) {
+        console.error(`[r2] ${e.operation} failed status=${e.status}: ${e.message}`);
         return json(
           { error: { code: "video_provider_error", message: "The video provider is unavailable, try again" } },
           502,

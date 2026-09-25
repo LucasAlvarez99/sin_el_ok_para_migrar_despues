@@ -3,14 +3,17 @@ import { formatClock } from '../lib/format.js';
 import { messageFor } from '../lib/errors.js';
 
 /**
- * Reproductor de YogaPop Up sobre <video> + hls.js, con controles propios y el estilo de la web.
+ * Reproductor de YogaPop Up sobre <video>, con controles propios y el estilo de la web.
  *
+ *  - Los videos se sirven directo desde Cloudflare R2: progresivos (sin adaptación de
+ *    calidad), con soporte de Range requests nativo del navegador para buscar/adelantar.
+ *    Si algún día una fuente sí es HLS (.m3u8), se sigue reproduciendo con hls.js o el
+ *    HLS nativo de Safari, con selector de calidad.
  *  - Retoma desde `resumeAt` (con opción "Empezar de cero").
- *  - Calidad automática o manual, velocidad, volumen, pantalla completa, teclado.
- *  - La URL firmada vence: se renueva sola antes de que ocurra (y si el CDN responde 401/403).
- *  - Sin hls.js (Safari en iPhone) usa el HLS nativo del navegador.
+ *  - Velocidad, volumen, pantalla completa, teclado.
+ *  - La URL firmada vence: se renueva sola antes de que ocurra (y si el servidor responde 401/403).
  *
- * El reproductor NO sabe nada de Supabase ni de Bunny: recibe la fuente ya resuelta y una función
+ * El reproductor NO sabe nada de Supabase ni de R2: recibe la fuente ya resuelta y una función
  * `getSource()` para renovarla. Avisa de lo que pasa con callbacks (onTime, onPause, onSeek, onEnded).
  */
 
@@ -18,6 +21,11 @@ const SPEEDS = [0.75, 1, 1.25, 1.5];
 const SEEK_STEP = 10;
 const IDLE_MS = 2800;
 const SEEK_RANGE = 1000;
+
+/** R2 sirve archivos progresivos (mp4); esto es por si alguna vez una fuente sí es HLS. */
+function isHlsUrl(url) {
+  return /\.m3u8(\?|#|$)/i.test(url);
+}
 
 const store = {
   get(key, fallback) {
@@ -41,8 +49,8 @@ export class VideoPlayer {
   /**
    * @param {HTMLElement} container
    * @param {object} options
-   * @param {{hlsUrl:string, expiresAt:number}} options.source   fuente inicial (URL firmada)
-   * @param {() => Promise<{hlsUrl:string, expiresAt:number}>} options.getSource   renueva la URL firmada
+   * @param {{url:string, expiresAt:number}} options.source   fuente inicial (URL firmada)
+   * @param {() => Promise<{url:string, expiresAt:number}>} options.getSource   renueva la URL firmada
    * @param {string} [options.title]
    * @param {string} [options.poster]
    * @param {number} [options.resumeAt]      segundos donde retomar
@@ -58,7 +66,7 @@ export class VideoPlayer {
     this.#build(container);
     this.#bindMedia();
     this.#bindUi();
-    this.#attach(this.#o.source.hlsUrl, this.#o.resumeAt);
+    this.#attach(this.#o.source.url, this.#o.resumeAt);
     this.#expiresAt = this.#o.source.expiresAt;
     this.#scheduleRefresh();
   }
@@ -187,7 +195,7 @@ export class VideoPlayer {
     this.#on(v, 'seeked', () => this.#o.onSeek?.());
     this.#on(v, 'ended', () => { this.#setState('ended'); this.#showControls(); this.#o.onEnded?.(); });
     this.#on(v, 'volumechange', () => this.#syncVolumeIcon());
-    this.#on(v, 'error', () => { if (!this.#hls) this.#showError('No pudimos reproducir el video en este navegador.'); });
+    this.#on(v, 'error', () => { if (!this.#hls) this.#handleVideoError(); });
   }
 
   #bindUi() {
@@ -258,11 +266,11 @@ export class VideoPlayer {
     if (k === 'arrowdown') { handled(); this.#video.volume = Math.max(0, this.#video.volume - 0.05); }
   }
 
-  // ------------------------------------------------------------------ HLS
+  // ------------------------------------------------------------------ fuente del video
   #attach(url, startAt) {
     const Hls = this.#o.Hls;
     const v = this.#video;
-    if (Hls && Hls.isSupported()) {
+    if (isHlsUrl(url) && Hls && Hls.isSupported()) {
       this.#hls?.destroy();
       const hls = new Hls({
         startPosition: startAt > 0 ? startAt : -1,
@@ -275,12 +283,23 @@ export class VideoPlayer {
       hls.on(Hls.Events.ERROR, (_e, data) => this.#onHlsError(data));
       hls.attachMedia(v);
       hls.loadSource(url);
-    } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (isHlsUrl(url) && v.canPlayType('application/vnd.apple.mpegurl')) {
       v.src = url; // HLS nativo (Safari en iPhone): sin selector de calidad
       if (startAt > 0) v.addEventListener('loadedmetadata', () => { v.currentTime = startAt; }, { once: true });
     } else {
-      this.#showError('Tu navegador no puede reproducir este video. Probá con otro navegador.');
+      // R2: archivo progresivo (mp4). El navegador reproduce con Range requests, sin hls.js.
+      v.src = url;
+      if (startAt > 0) v.addEventListener('loadedmetadata', () => { v.currentTime = startAt; }, { once: true });
     }
+  }
+
+  /** Video progresivo (sin hls.js): reintenta renovando la URL firmada antes de rendirse. */
+  #handleVideoError() {
+    if (this.#destroyed) return;
+    const now = Date.now();
+    if (now - this.#errors.since > 60_000) this.#errors = { network: 0, media: 0, auth: 0, since: now };
+    if (++this.#errors.auth <= 2) return void this.#refreshSource();
+    this.#showError('No pudimos reproducir el video. Revisá tu conexión e intentá de nuevo.');
   }
 
   #onHlsError(data) {
@@ -313,9 +332,9 @@ export class VideoPlayer {
         this.#scheduleRefresh();
         if (this.#hls) {
           this.#hls.config.startPosition = t; // vuelve a cargar desde la posición actual, no desde el principio
-          this.#hls.loadSource(src.hlsUrl);
+          this.#hls.loadSource(src.url);
         } else {
-          this.#video.src = src.hlsUrl;
+          this.#video.src = src.url;
           this.#video.currentTime = t;
         }
         if (wasPlaying) this.play();

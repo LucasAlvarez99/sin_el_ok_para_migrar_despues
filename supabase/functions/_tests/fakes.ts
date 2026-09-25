@@ -1,5 +1,4 @@
-/** Dobles de prueba en memoria: API de Bunny, base de datos y autenticación. */
-import { BunnyService } from "../_shared/bunny/bunny.service.ts";
+/** Dobles de prueba en memoria: R2, base de datos y autenticación. */
 import { HttpError } from "../_shared/http.ts";
 import type {
   AppConfig,
@@ -12,81 +11,54 @@ import type {
   HandlerDeps,
   NewClass,
   ProgressRow,
+  R2Port,
   Role,
   VideoStatePatch,
 } from "../_shared/ports.ts";
+import type { R2ObjectInfo, R2UploadCredentials, SignedPlayback } from "../_shared/r2/r2.types.ts";
 
-export const LIB = "12345";
 export const NOW = 1_800_000_000;
 export const ADMIN_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 export const USER_ID = "bbbbbbbb-0000-4000-8000-000000000002";
 export const USER2_ID = "cccccccc-0000-4000-8000-000000000003";
 export const DEV_ID = "dddddddd-0000-4000-8000-000000000004";
 
-// ------------------------------------------------------------------ Bunny (API HTTP simulada)
-interface FakeVideo {
-  guid: string;
-  videoLibraryId: number;
-  title: string;
-  length: number;
-  status: number;
-}
+// ------------------------------------------------------------------ R2 en memoria
+export class FakeR2 implements R2Port {
+  readonly bucket = "test-bucket";
+  objects = new Map<string, { size: number }>();
+  calls: { op: string; key: string }[] = [];
+  private seq = 0;
 
-export class FakeBunnyApi {
-  videos = new Map<string, FakeVideo>();
-  calls: { method: string; path: string; accessKey: string | null }[] = [];
-  /** Si se define, la próxima llamada a esa operación responde con este status HTTP. */
-  failWith: { method: string; status: number } | null = null;
+  newObjectKey(classId: string): string {
+    return `classes/${classId}/fake-${this.seq++}.mp4`;
+  }
 
-  fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-    const method = init?.method ?? "GET";
-    const headers = new Headers(init?.headers);
-    this.calls.push({ method, path: url.pathname, accessKey: headers.get("AccessKey") });
+  createUploadUrl(key: string, ttlSeconds: number): Promise<R2UploadCredentials> {
+    this.calls.push({ op: "createUploadUrl", key });
+    return Promise.resolve({ url: `https://fake-r2.test/${this.bucket}/${key}?sig=upload`, key, expire: NOW + ttlSeconds });
+  }
 
-    if (this.failWith && this.failWith.method === method) {
-      const { status } = this.failWith;
-      this.failWith = null;
-      return Promise.resolve(new Response("upstream error", { status }));
-    }
-    if (headers.get("AccessKey") !== "bunny-api-key") return Promise.resolve(new Response("nope", { status: 401 }));
+  headObject(key: string): Promise<R2ObjectInfo> {
+    this.calls.push({ op: "headObject", key });
+    const o = this.objects.get(key);
+    return Promise.resolve(o ? { exists: true, size: o.size } : { exists: false });
+  }
 
-    const base = `/library/${LIB}/videos`;
-    if (method === "POST" && url.pathname === base) {
-      const guid = crypto.randomUUID();
-      const v: FakeVideo = {
-        guid,
-        videoLibraryId: Number(LIB),
-        title: JSON.parse(String(init?.body)).title,
-        length: 0,
-        status: 0,
-      };
-      this.videos.set(guid, v);
-      return Promise.resolve(Response.json(v));
-    }
-    const m = url.pathname.startsWith(base + "/") ? url.pathname.slice(base.length + 1) : null;
-    if (m) {
-      const v = this.videos.get(m);
-      if (!v) return Promise.resolve(new Response("not found", { status: 404 }));
-      if (method === "GET") return Promise.resolve(Response.json(v));
-      if (method === "DELETE") {
-        this.videos.delete(m);
-        return Promise.resolve(Response.json({ success: true }));
-      }
-    }
-    return Promise.resolve(new Response("bad route", { status: 400 }));
-  };
-}
+  deleteObject(key: string): Promise<boolean> {
+    this.calls.push({ op: "deleteObject", key });
+    return Promise.resolve(this.objects.delete(key));
+  }
 
-export function makeBunny(api: FakeBunnyApi): BunnyService {
-  return new BunnyService({
-    apiKey: "bunny-api-key",
-    libraryId: LIB,
-    cdnHostname: "vz-test-000.b-cdn.net",
-    tokenAuthKey: "token-key",
-    fetchImpl: api.fetch as typeof fetch,
-    nowSeconds: () => NOW,
-  });
+  signPlayback(key: string, ttlSeconds: number): Promise<SignedPlayback> {
+    this.calls.push({ op: "signPlayback", key });
+    return Promise.resolve({ url: `https://fake-r2.test/${this.bucket}/${key}?sig=play`, expiresAt: NOW + ttlSeconds });
+  }
+
+  /** Ayuda de test: simula que el navegador terminó de subir el archivo. */
+  putObject(key: string, size = 1_000_000): void {
+    this.objects.set(key, { size });
+  }
 }
 
 // ------------------------------------------------------------------ Base de datos en memoria
@@ -110,8 +82,7 @@ export class FakeRepo implements ClassRepo {
       sort_order: 0,
       is_published: false,
       video_status: "pending",
-      bunny_video_id: null,
-      bunny_library_id: null,
+      r2_object_key: null,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
       ...p,
@@ -128,17 +99,17 @@ export class FakeRepo implements ClassRepo {
     const c = this.classes.get(id);
     return Promise.resolve(c ? { ...c } : null);
   }
-  getClassByBunnyVideoId(v: string) {
-    const c = [...this.classes.values()].find((c) => c.bunny_video_id === v);
+  getClassByObjectKey(key: string) {
+    const c = [...this.classes.values()].find((c) => c.r2_object_key === key);
     return Promise.resolve(c ? { ...c } : null);
   }
-  attachVideo(classId: string, video: { bunny_video_id: string; bunny_library_id: string }) {
+  attachVideo(classId: string, video: { r2_object_key: string }) {
     const c = this.classes.get(classId);
-    if (!c || c.bunny_video_id) return Promise.resolve(null);
+    if (!c || c.r2_object_key) return Promise.resolve(null);
     Object.assign(c, video, { video_status: "pending", duration_seconds: null });
     return Promise.resolve({ ...c });
   }
-  replaceFailedVideo(classId: string, video: { bunny_video_id: string; bunny_library_id: string }) {
+  replaceFailedVideo(classId: string, video: { r2_object_key: string }) {
     const c = this.classes.get(classId);
     if (!c || c.video_status !== "failed") return Promise.resolve(null);
     Object.assign(c, video, { video_status: "pending", duration_seconds: null });
@@ -231,20 +202,18 @@ export class FakeAudit implements AuditPort {
 
 // ------------------------------------------------------------------ Armado
 export function makeDeps(over: Partial<AppConfig> = {}) {
-  const api = new FakeBunnyApi();
+  const r2 = new FakeR2();
   const repo = new FakeRepo();
   const auth = new FakeAuth(repo);
   const audit = new FakeAudit();
-  const bunny = makeBunny(api);
   const config: AppConfig = {
     allowedOrigins: ["https://yogapopup.test"],
     playbackTtlSeconds: 7200,
     uploadTtlSeconds: 14400,
-    webhookSecret: "readonly-key",
     ...over,
   };
-  const deps: HandlerDeps = { bunny, repo, auth, audit, config };
-  return { api, repo, auth, audit, bunny, config, deps };
+  const deps: HandlerDeps = { r2, repo, auth, audit, config };
+  return { r2, repo, auth, audit, config, deps };
 }
 
 export function post(body: unknown, token?: string, extra: Record<string, string> = {}): Request {
@@ -257,16 +226,4 @@ export function post(body: unknown, token?: string, extra: Record<string, string
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
-}
-
-export async function hmacHex(key: string, msg: string): Promise<string> {
-  const k = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(key),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg)));
-  return [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

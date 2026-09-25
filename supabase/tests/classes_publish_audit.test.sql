@@ -16,7 +16,7 @@ do $$ declare cid uuid; begin
 end $$;
 
 -- 2. Publicar y despublicar una clase con video listo (solo el backend puede dejar video_status
---    en 'ready', así que se fuerza aquí como si ya hubiera pasado por Bunny).
+--    en 'ready', así que se fuerza aquí como si ya hubiera pasado por R2).
 do $$ declare cid uuid; begin
   insert into public.classes (title, video_status) values ('clase lista', 'ready') returning id into cid;
 

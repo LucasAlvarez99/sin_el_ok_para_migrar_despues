@@ -9,12 +9,12 @@ const COMPLETED_RATIO = 0.95;
 
 /**
  * POST { class_id }
- * Usuario autenticado. Devuelve una URL HLS firmada y con vencimiento SOLO si el usuario
- * tiene acceso (public.can_access_class, ejecutada como él), más el punto donde retomar.
- * Conocer la URL de la página o el id de una clase no alcanza para ver el video.
+ * Usuario autenticado. Devuelve una URL de video firmada y con vencimiento SOLO si el
+ * usuario tiene acceso (public.can_access_class, ejecutada como él), más el punto donde
+ * retomar. Conocer la URL de la página o el id de una clase no alcanza para ver el video.
  */
 export function createHandler(deps: HandlerDeps) {
-  const { bunny, repo, auth, config } = deps;
+  const { r2, repo, auth, config } = deps;
 
   return createEndpoint({
     methods: ["POST"],
@@ -30,12 +30,12 @@ export function createHandler(deps: HandlerDeps) {
 
       const row = await repo.getClass(classId);
       if (!row) throw new HttpError(404, "class_not_found", "Class not found");
-      if (!row.bunny_video_id || row.video_status !== "ready") {
+      if (!row.r2_object_key || row.video_status !== "ready") {
         throw new HttpError(409, "video_not_ready", "The video is not ready yet");
       }
 
       const [signed, progress] = await Promise.all([
-        bunny.signPlayback(row.bunny_video_id, config.playbackTtlSeconds),
+        r2.signPlayback(row.r2_object_key, config.playbackTtlSeconds),
         repo.getProgress(user.id, row.id),
       ]);
 
@@ -47,7 +47,7 @@ export function createHandler(deps: HandlerDeps) {
         class_id: row.id,
         title: row.title,
         duration_seconds: row.duration_seconds,
-        hls_url: signed.hlsUrl,
+        video_url: signed.url,
         expires_at: signed.expiresAt,
         resume_seconds: resume,
         completed: progress?.completed ?? false,

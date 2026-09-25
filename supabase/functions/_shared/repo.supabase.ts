@@ -3,9 +3,9 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { THUMBNAIL_BUCKET, thumbnailPathFromUrl } from "./thumbnails.ts";
 import type { ClassRepo, ClassRow, NewClass, ProgressRow, VideoStatePatch } from "./ports.ts";
 
-/** Columnas que lee el backend. bunny_* solo son legibles con la service role. */
-const CLASS_COLUMNS = "id,title,description,thumbnail_url,duration_seconds,level,category,access_level," +
-  "sort_order,is_published,video_status,bunny_video_id,bunny_library_id,created_at,updated_at";
+/** Columnas que lee el backend. r2_object_key solo es legible con la service role. */
+const CLASS_COLUMNS = "id,title,description,thumbnail_url,duration_seconds,level,category,access_level,\
+sort_order,is_published,video_status,r2_object_key,created_at,updated_at";
 
 /**
  * Repositorio sobre Supabase usando la SERVICE ROLE (se salta RLS).
@@ -34,20 +34,20 @@ export function createSupabaseRepo(url: string, serviceRoleKey: string): ClassRe
       return (data as ClassRow | null) ?? null;
     },
 
-    async getClassByBunnyVideoId(videoId) {
-      const { data, error } = await db.from("classes").select(CLASS_COLUMNS).eq("bunny_video_id", videoId)
+    async getClassByObjectKey(key) {
+      const { data, error } = await db.from("classes").select(CLASS_COLUMNS).eq("r2_object_key", key)
         .maybeSingle();
-      if (error) fail("getClassByBunnyVideoId", error);
+      if (error) fail("getClassByObjectKey", error);
       return (data as ClassRow | null) ?? null;
     },
 
     async attachVideo(classId, video) {
-      // El filtro "bunny_video_id is null" hace la operación atómica: si dos peticiones
+      // El filtro "r2_object_key is null" hace la operación atómica: si dos peticiones
       // compiten, solo una asocia su video.
       const { data, error } = await db.from("classes")
         .update({ ...video, video_status: "pending", duration_seconds: null })
         .eq("id", classId)
-        .is("bunny_video_id", null)
+        .is("r2_object_key", null)
         .select(CLASS_COLUMNS)
         .maybeSingle();
       if (error) fail("attachVideo", error);

@@ -2,7 +2,7 @@
   "name": "yogapopup",
   "version": "0.3.0",
   "private": true,
-  "description": "YogaPop Up: sitio estático + videos en Bunny Stream + Supabase (auth, clases, progreso)",
+  "description": "YogaPop Up: sitio estático + videos en Cloudflare R2 + Supabase (auth, clases, progreso)",
   "engines": {
     "node": ">=20.19.0"
   },
@@ -40,8 +40,6 @@
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
     "bootstrap": "5.3.3",
-    "bootstrap-icons": "1.11.3",
-    "hls.js": "1.7.3",
-    "tus-js-client": "4.3.1"
+    "bootstrap-icons": "1.11.3"
   }
 }

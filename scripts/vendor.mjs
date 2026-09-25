@@ -17,9 +17,7 @@ mkdirSync(join(cssOut, "fonts"), { recursive: true });
 
 const libs = [
   { pkg: "bootstrap", file: "dist/js/bootstrap.bundle.min.js", as: "bootstrap.bundle.min.js" },
-  { pkg: "hls.js", file: "dist/hls.min.js", as: "hls.min.js" },
   { pkg: "@supabase/supabase-js", file: "dist/umd/supabase.js", as: "supabase.js" },
-  { pkg: "tus-js-client", file: "dist/tus.min.js", as: "tus.min.js" },
 ];
 
 const versions = {};

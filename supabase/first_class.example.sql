@@ -1,11 +1,12 @@
 -- PRIMERA CLASE, SIN PANEL (hasta que exista el panel de negocio).
 -- Pasos previos, a mano:
---   1. En Bunny: Stream → tu librería → Upload: sube el video y espera a que termine de procesarse.
---   2. Copia su "Video ID" (un GUID) y su duración en segundos.
--- Luego ejecuta esto en Supabase > SQL Editor (ahí sí se pueden escribir las columnas de Bunny).
+--   1. Sube el video al bucket de R2 (con rclone, el dashboard de Cloudflare, o el AWS CLI
+--      apuntando al endpoint de R2) con una key del tipo "classes/<uuid>/archivo.mp4".
+--   2. Anota esa key y la duración del video en segundos.
+-- Luego ejecuta esto en Supabase > SQL Editor (ahí sí se puede escribir la key de R2).
 insert into public.classes (
   title, description, level, category, access_level, sort_order,
-  bunny_video_id, bunny_library_id, video_status, duration_seconds, is_published
+  r2_object_key, video_status, duration_seconds, is_published
 ) values (
   'Yoga para principiantes',                        -- título
   'Una práctica suave para empezar.',               -- descripción
@@ -13,9 +14,8 @@ insert into public.classes (
   'Vinyasa',                                        -- categoría
   'free',                                           -- free (cualquier usuario registrado) | restricted (requiere permiso)
   0,                                                -- orden en la videoteca
-  'REEMPLAZAR-GUID-DEL-VIDEO-EN-BUNNY',             -- Video ID de Bunny
-  'REEMPLAZAR-ID-DE-LA-LIBRERIA',                   -- Library ID de Bunny
-  'ready',                                          -- el video ya está procesado
+  'classes/REEMPLAZAR-UUID/REEMPLAZAR-ARCHIVO.mp4', -- key del objeto en R2
+  'ready',                                          -- el video ya está subido
   2700,                                             -- duración en segundos (45 min)
   true                                              -- publicada
 );

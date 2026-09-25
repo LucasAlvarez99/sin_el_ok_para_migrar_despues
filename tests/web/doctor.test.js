@@ -56,21 +56,20 @@ Deno.test("doctor · frontend: avisa si falta la política de privacidad", () =>
 
 Deno.test("doctor · backend: variables faltantes y mal formadas", () => {
   const r = levels(
-    checkBackendEnv({ BUNNY_LIBRARY_ID: "abc", BUNNY_CDN_HOSTNAME: "https://vz-1.b-cdn.net", ALLOWED_ORIGINS: "" }),
+    checkBackendEnv({ R2_BUCKET: "https://example.com/bucket", ALLOWED_ORIGINS: "" }),
   );
-  assert.equal(r.BUNNY_LIBRARY_ID, "fail");
-  assert.equal(r.BUNNY_API_KEY, "fail");
-  assert.equal(r.BUNNY_CDN_HOSTNAME, "fail");
+  assert.equal(r.R2_ACCOUNT_ID, "fail");
+  assert.equal(r.R2_ACCESS_KEY_ID, "fail");
+  assert.equal(r.R2_BUCKET, "fail");
   assert.equal(r.ALLOWED_ORIGINS, "fail");
 });
 
 Deno.test("doctor · backend: configuración correcta", () => {
   const r = checkBackendEnv({
-    BUNNY_LIBRARY_ID: "12345",
-    BUNNY_API_KEY: "a",
-    BUNNY_READONLY_API_KEY: "b",
-    BUNNY_TOKEN_AUTH_KEY: "c",
-    BUNNY_CDN_HOSTNAME: "vz-abc-123.b-cdn.net",
+    R2_ACCOUNT_ID: "abc123",
+    R2_ACCESS_KEY_ID: "a",
+    R2_SECRET_ACCESS_KEY: "b",
+    R2_BUCKET: "yogapopup-videos",
     ALLOWED_ORIGINS: "https://yogapopup.es,https://www.yogapopup.es",
   });
   assert.equal(summarize(r).fail, 0);
@@ -79,11 +78,10 @@ Deno.test("doctor · backend: configuración correcta", () => {
 
 Deno.test("doctor · backend: ALLOWED_ORIGINS peligrosos (*, ejemplo, con ruta, localhost)", () => {
   const base = {
-    BUNNY_LIBRARY_ID: "1",
-    BUNNY_API_KEY: "a",
-    BUNNY_READONLY_API_KEY: "b",
-    BUNNY_TOKEN_AUTH_KEY: "c",
-    BUNNY_CDN_HOSTNAME: "vz-a.b-cdn.net",
+    R2_ACCOUNT_ID: "abc123",
+    R2_ACCESS_KEY_ID: "a",
+    R2_SECRET_ACCESS_KEY: "b",
+    R2_BUCKET: "videos",
   };
   const of = (o) => checkBackendEnv({ ...base, ALLOWED_ORIGINS: o }).filter((x) => x.name === "ALLOWED_ORIGINS");
   assert.equal(of("*")[0].level, "fail");
@@ -92,18 +90,6 @@ Deno.test("doctor · backend: ALLOWED_ORIGINS peligrosos (*, ejemplo, con ruta, 
   assert.ok(
     of("https://yogapopup.es,http://localhost:3000").some((x) => x.level === "warn" && /localhost/.test(x.detail)),
   );
-});
-
-Deno.test("doctor · backend: la clave de solo lectura no puede ser la de escritura", () => {
-  const r = checkBackendEnv({
-    BUNNY_LIBRARY_ID: "1",
-    BUNNY_API_KEY: "igual",
-    BUNNY_READONLY_API_KEY: "igual",
-    BUNNY_TOKEN_AUTH_KEY: "c",
-    BUNNY_CDN_HOSTNAME: "vz-a.b-cdn.net",
-    ALLOWED_ORIGINS: "https://a.es",
-  });
-  assert.ok(r.some((x) => x.name === "BUNNY_READONLY_API_KEY" && x.level === "warn"));
 });
 
 Deno.test("doctor · ajustes de Auth: avisa si no se exige confirmar el correo o si el registro está apagado", () => {

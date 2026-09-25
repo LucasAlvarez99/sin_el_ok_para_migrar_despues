@@ -5,16 +5,19 @@ import { type ClassRow, type HandlerDeps, toPublicClass } from "../_shared/ports
 /**
  * POST { title, description?, category?, level?, access_level?, sort_order?, class_id? }
  *
- * Solo admin. Deja todo listo para que el NAVEGADOR suba el archivo directo a Bunny (TUS):
- *  - Sin class_id: crea el video en Bunny + una clase nueva.
+ * Solo admin. Deja todo listo para que el NAVEGADOR suba el archivo directo a R2 (PUT
+ * prefirmado):
+ *  - Sin class_id: reserva una key en R2 + crea una clase nueva.
  *  - Con class_id, según el estado del video de esa clase:
- *      · sin video          -> crea el video en Bunny y lo asocia
- *      · pending/uploading  -> REANUDA: mismo video, credenciales nuevas (subida interrumpida)
- *      · failed             -> REEMPLAZA: video nuevo (y borra el fallido)
- *      · processing/ready   -> 409, ya tiene un video en uso
+ *      · sin video          -> reserva una key nueva y la asocia
+ *      · pending            -> REANUDA: misma key, URL prefirmada nueva (aún no se subió nada,
+ *                               o la subida se cortó a mitad de camino: R2 no permite retomar
+ *                               un PUT simple, así que el archivo se vuelve a subir entero)
+ *      · failed             -> REEMPLAZA: key nueva (la vieja, si llegó a existir, se borra)
+ *      · uploading/processing/ready -> 409, ya tiene un video en uso
  */
 export function createHandler(deps: HandlerDeps) {
-  const { bunny, repo, auth, audit, config } = deps;
+  const { r2, repo, auth, audit, config } = deps;
 
   return createEndpoint({
     methods: ["POST"],
@@ -26,7 +29,7 @@ export function createHandler(deps: HandlerDeps) {
       const { row, resumed } = input.classId
         ? await prepareExistingClass(input.classId)
         : { row: await createNewClass(), resumed: false };
-      const upload = await bunny.createUploadCredentials(row.bunny_video_id!, config.uploadTtlSeconds);
+      const upload = await r2.createUploadUrl(row.r2_object_key!, config.uploadTtlSeconds);
 
       // Registro no destructivo: si falla se anota en el log, pero no se deshace lo ya creado.
       try {
@@ -44,23 +47,16 @@ export function createHandler(deps: HandlerDeps) {
 
       // ------------------------------------------------------------------ clase nueva
       async function createNewClass(): Promise<ClassRow> {
-        const video = await bunny.createVideo(input.title);
-        try {
-          return await repo.insertClass({
-            title: input.title,
-            description: input.description,
-            category: input.category,
-            level: input.level,
-            access_level: input.accessLevel,
-            sort_order: input.sortOrder,
-            created_by: admin.id,
-            bunny_video_id: video.guid,
-            bunny_library_id: bunny.libraryId,
-          });
-        } catch (e) {
-          await cleanupVideo(bunny, video.guid);
-          throw e;
-        }
+        return await repo.insertClass({
+          title: input.title,
+          description: input.description,
+          category: input.category,
+          level: input.level,
+          access_level: input.accessLevel,
+          sort_order: input.sortOrder,
+          created_by: admin.id,
+          r2_object_key: r2.newObjectKey(crypto.randomUUID()),
+        });
       }
 
       // ------------------------------------------------------------------ clase existente
@@ -68,45 +64,46 @@ export function createHandler(deps: HandlerDeps) {
         const existing = await repo.getClass(classId);
         if (!existing) throw new HttpError(404, "class_not_found", "Class not found");
 
-        const inUse = existing.video_status === "processing" || existing.video_status === "ready";
-        if (existing.bunny_video_id && inUse) {
+        const inUse = existing.video_status === "processing" || existing.video_status === "ready" ||
+          existing.video_status === "uploading";
+        if (existing.r2_object_key && inUse) {
           throw new HttpError(409, "video_already_attached", "This class already has a video");
         }
 
-        // Subida interrumpida: se reutiliza el mismo video de Bunny (TUS permite retomar).
-        if (existing.bunny_video_id && existing.video_status !== "failed") {
+        // Todavía no hay nada subido: se reutiliza la misma key.
+        if (existing.r2_object_key && existing.video_status !== "failed") {
           return { row: existing, resumed: true };
         }
 
-        const previousVideoId = existing.bunny_video_id; // se captura ANTES de actualizar la fila
-        const video = await bunny.createVideo(existing.title);
-        const target = { bunny_video_id: video.guid, bunny_library_id: bunny.libraryId };
+        const previousKey = existing.r2_object_key; // se captura ANTES de actualizar la fila
+        const key = r2.newObjectKey(classId);
+        const target = { r2_object_key: key };
         let saved: ClassRow | null;
         try {
-          saved = previousVideoId
+          saved = previousKey
             ? await repo.replaceFailedVideo(existing.id, target)
             : await repo.attachVideo(existing.id, target);
         } catch (e) {
-          await cleanupVideo(bunny, video.guid);
+          await cleanupObject(r2, key);
           throw e;
         }
         if (!saved) {
-          // Otra petición se adelantó: no dejamos un video huérfano en Bunny.
-          await cleanupVideo(bunny, video.guid);
+          // Otra petición se adelantó: no dejamos una key huérfana con datos en R2.
+          await cleanupObject(r2, key);
           throw new HttpError(409, "video_already_attached", "This class already has a video");
         }
-        if (previousVideoId) await cleanupVideo(bunny, previousVideoId); // el video fallido anterior
+        if (previousKey) await cleanupObject(r2, previousKey); // el video fallido anterior, si llegó a subirse
         return { row: saved, resumed: false };
       }
     },
   });
 }
 
-/** Compensación: si algo falla después de crear el video, se borra (mejor esfuerzo). */
-async function cleanupVideo(bunny: HandlerDeps["bunny"], videoId: string): Promise<void> {
+/** Compensación: si algo falla después de reservar la key, se borra (mejor esfuerzo). */
+async function cleanupObject(r2: HandlerDeps["r2"], key: string): Promise<void> {
   try {
-    await bunny.deleteVideo(videoId);
+    await r2.deleteObject(key);
   } catch (e) {
-    console.error("[cleanup] could not delete orphan Bunny video", videoId, e instanceof Error ? e.message : e);
+    console.error("[cleanup] could not delete orphan R2 object", key, e instanceof Error ? e.message : e);
   }
 }

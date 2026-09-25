@@ -4,19 +4,9 @@
     "license": "MIT",
     "file": "bootstrap.bundle.min.js"
   },
-  "hls.js": {
-    "version": "1.7.3",
-    "license": "Apache-2.0",
-    "file": "hls.min.js"
-  },
   "@supabase/supabase-js": {
     "version": "2.116.0",
     "license": "MIT",
     "file": "supabase.js"
-  },
-  "tus-js-client": {
-    "version": "4.3.1",
-    "license": "MIT",
-    "file": "tus.min.js"
   }
 }
