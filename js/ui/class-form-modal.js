@@ -5,7 +5,7 @@ import { adminCreateUpload, adminSyncVideo, adminUpdateClass, readVideoDuration,
 import { toast } from './toast.js';
 
 /**
- * Fase 4 (panel administrativo): crear una clase y subir su video (con barra de progreso), o
+ * Fases 8-11 (panel administrativo): crear una clase y subir su video (con barra de progreso), o
  * reintentar la subida de una clase existente cuyo video quedó pendiente/incompleto/con error.
  *
  * El video SIEMPRE se sube directo del navegador a R2 (PUT prefirmado): el archivo nunca pasa

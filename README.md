@@ -9,7 +9,7 @@ web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos 
 > **Poner el sitio a andar con cuentas reales:** [`docs/PUESTA-EN-MARCHA.md`](docs/PUESTA-EN-MARCHA.md) ·
 > Reglas del proyecto: [`CLAUDE.md`](CLAUDE.md) · Encargo original: [`docs/ENCARGO-ORIGINAL.md`](docs/ENCARGO-ORIGINAL.md) ·
 > Auditoría y plan por fases: [`docs/AUDITORIA-Y-PLAN.md`](docs/AUDITORIA-Y-PLAN.md) · Hoja de ruta hasta la
-> entrega: [`Fases`](#fases) más abajo (Fase 0 = hoy, Fase 7 = día de entrega).
+> entrega: [`Fases`](#fases) más abajo (Fase 0 = hoy, Fase 20 = día de entrega).
 >
 > **Probado:** 47 pruebas de backend (roles, auditoría, contratos, firmas R2) · 25 unitarias del frontend y de `doctor` ·
 > **pruebas de base de datos** (`npm run test:db`: migraciones en orden, matriz de permisos por rol, historial inmutable,
@@ -45,13 +45,26 @@ Leyenda: ✅ cumplida · 🟡 código listo, falta validarla con cuentas reales 
 | Fase | Qué es | Estado |
 |---|---|---|
 | 0 | Auditoría + modelo de datos + backend de video (R2) | ✅ |
-| 1 | Reproductor `VideoPlayer` | ⬜ |
-| 2 | Progreso del usuario (frontend) | ⬜ |
-| 3 | Autenticación y permisos (frontend) | ⬜ |
-| 4 | Panel administrativo | ⬜ |
-| 5 | Prueba con un solo video (cuentas reales) | ⬜ |
-| 6 | Escalado a ~40 videos | ⬜ |
-| 7 | Entrega | ⬜ |
+| 1 | Reproductor — estructura y controles básicos | ⬜ |
+| 2 | Reproductor — reanudar, renovar y errores | ⬜ |
+| 3 | Progreso — guardado periódico | ⬜ |
+| 4 | Progreso — interfaz | ⬜ |
+| 5 | Autenticación — login, registro y sesión | ⬜ |
+| 6 | Autenticación — páginas protegidas | ⬜ |
+| 7 | Autenticación — conectar la home | ⬜ |
+| 8 | Panel administrativo — listado | ⬜ |
+| 9 | Panel administrativo — alta y edición | ⬜ |
+| 10 | Panel administrativo — subida de video | ⬜ |
+| 11 | Panel administrativo — publicar y borrar | ⬜ |
+| 12 | Cuentas reales — infraestructura | ⬜ |
+| 13 | Prueba con un solo video real | ⬜ |
+| 14 | Prueba con un solo video — progreso, responsive y costo | ⬜ |
+| 15 | Escalado — varios videos | ⬜ |
+| 16 | Escalado — catálogo completo | ⬜ |
+| 17 | Entrega — dominio y correo | ⬜ |
+| 18 | Entrega — monitoreo y respaldo | ⬜ |
+| 19 | Entrega — recorrido y traspaso | ⬜ |
+| 20 | Entrega — cierre del proyecto | ⬜ |
 
 Detalle de cada fase, con sus tareas, más abajo en [Fases](#fases).
 
@@ -217,10 +230,11 @@ ping de UptimeRobot a `/functions/v1/health` cada 5 min) y **no incluye copias d
 
 ## Fases
 
-> Hoja de ruta puesta al día el 25/09/2026, después de migrar el proveedor de video de Bunny Stream a
-> Cloudflare R2. La **Fase 0** es una foto de "hasta acá se llegó" (no queda nada pendiente adentro, salvo
-> lo que depende de cuentas del cliente); las fases siguientes son el trabajo que falta, y la última
-> (**Fase 7**) es el día de entrega.
+> Hoja de ruta puesta al día el 26/09/2026. La **Fase 0** es una foto de "hasta acá se llegó" (no queda
+> nada pendiente adentro, salvo lo que depende de cuentas del cliente). A partir de ahí las fases son
+> chicas a propósito (una tarde de trabajo cada una, más o menos) para poder cerrar y marcar "cumplida"
+> seguido, en vez de tener fases enormes que quedan a medio camino por muchas sesiones. La última
+> (**Fase 20**) es el día de entrega.
 
 ### Fase 0 · Estado actual — auditoría + modelo de datos + backend de video
 
@@ -241,81 +255,172 @@ ping de UptimeRobot a `/functions/v1/health` cada 5 min) y **no incluye copias d
 
 - [x] **FASE 0 CUMPLIDA** — el código del backend está completo y probado con simulaciones. Lo único que
       falta para darla por *cerrada en producción* son las cuentas reales del cliente, listadas abajo en
-      **Tareas externas pendientes**; se valida con el primer video real en la Fase 5.
+      **Tareas externas pendientes**; se valida con el primer video real en la Fase 13.
 
-### Fase 1 · Reproductor `VideoPlayer`
+### Fase 1 · Reproductor — estructura y controles básicos
 
-- [ ] Componente reutilizable sobre `<video>` (reproducción progresiva desde R2) con el diseño de YogaPop Up
-- [ ] Play/Pause · barra de progreso · volumen · pantalla completa · duración
-- [ ] Continuar desde el último punto guardado
-- [ ] Renovar la URL firmada si vence durante la reproducción
-- [ ] Estados de carga, error y vacío
+- [ ] Componente `VideoPlayer` reutilizable sobre `<video>` (reproducción progresiva desde R2) con el
+      diseño de YogaPop Up
+- [ ] Play/Pause · barra de progreso (click y arrastre) · volumen · pantalla completa · duración
+- [ ] Estados de carga y vacío (antes de que el video empiece a reproducirse)
 
 - [ ] **FASE 1 CUMPLIDA**
 
-### Fase 2 · Progreso del usuario (frontend)
+### Fase 2 · Reproductor — reanudar, renovar y errores
 
-- [x] Función SQL `save_progress()` y tabla `video_progress` (hechas en la Fase 0)
-- [ ] Guardar cada X segundos y al salir/pausar (no una petición por segundo)
-- [ ] Mostrar porcentaje y "Continuar clase → 27:43"
-- [ ] Sección "Continuar viendo"
+- [ ] Continuar desde el último punto guardado (`resume_seconds` de `playback`)
+- [ ] Renovar la URL firmada sola si vence durante la reproducción (antes de que ocurra, y ante un 403)
+- [ ] Estado de error con reintento (video no listo, servicio caído, URL que no renueva)
 
 - [ ] **FASE 2 CUMPLIDA**
 
-### Fase 3 · Autenticación y permisos (frontend)
+### Fase 3 · Progreso — guardado periódico
 
-- [x] Autorización en el servidor: `can_access_class()` + `playback` (hechas en la Fase 0)
-- [x] Estructura extensible a gratuito / premium / curso / suscripción (`entitlements`)
-- [ ] Login / registro / cierre de sesión con Supabase Auth (activar el ícono "Mi cuenta")
-- [ ] Páginas `videos.html` y `clase.html?id=…` protegidas (sin sesión → login)
-- [ ] Conectar las tarjetas de la sección "Videoteca" de la home
+- [x] Función SQL `save_progress()` y tabla `video_progress` (hechas en la Fase 0)
+- [ ] Guardar cada X segundos mientras reproduce (no una petición por segundo)
+- [ ] Guardar también al pausar y al salir/cerrar la pestaña (guardado síncrono de salida)
+- [ ] No saturar al buscar en la barra (mínimo entre guardados)
 
 - [ ] **FASE 3 CUMPLIDA**
 
-### Fase 4 · Panel administrativo
+### Fase 4 · Progreso — interfaz
 
-- [ ] Listado de clases: clase, video, estado, fecha y acciones
-- [ ] Formulario: título, descripción, categoría, nivel, miniatura, video y estado
-- [ ] Subida del video con barra de progreso (PUT directo a R2) y confirmación automática al terminar
-- [ ] Editar · publicar · despublicar · eliminar
-- [ ] Acceso solo para propietario y desarrolladores (rol `owner` o `developer`)
+- [ ] Mostrar porcentaje de avance en la tarjeta de cada clase
+- [ ] "Continuar clase → 27:43" al volver a entrar
+- [ ] Sección "Continuar viendo" con las clases empezadas y no terminadas
 
 - [ ] **FASE 4 CUMPLIDA**
 
-### Fase 5 · Prueba con un solo video (cuentas reales)
+### Fase 5 · Autenticación — login, registro y sesión
 
-- [ ] Upload a R2 real · confirmación de subida (`admin-sync-video`) · asociación con Supabase
-- [ ] Reproducción · autenticación · seguridad (probar que una URL suelta no sirve)
-- [ ] Progreso y "continuar"
-- [ ] Responsive: escritorio y móvil
-- [ ] Validar el costo real de almacenamiento y ajustar la estimación
+- [x] Autorización en el servidor: `can_access_class()` + `playback` (hechas en la Fase 0)
+- [ ] Login / registro / cierre de sesión con Supabase Auth
+- [ ] Activar el ícono "Mi cuenta" (estado con/sin sesión, nombre del usuario)
+- [ ] Recuperar contraseña (depende del SMTP propio, ver Fase 17)
 
 - [ ] **FASE 5 CUMPLIDA**
 
-### Fase 6 · Escalado
+### Fase 6 · Autenticación — páginas protegidas
 
-- [ ] 1 → 3 → 10 → 40 videos, cargados desde el panel sin tocar código
-- [ ] Revisar costos con uso real
+- [ ] `videos.html` y `clase.html?id=…` protegidas: sin sesión → modal/redirect a login
+- [ ] Volver a la clase que se quería ver después de iniciar sesión
+- [ ] Mensaje claro cuando la clase es restringida y el usuario no tiene acceso (`entitlements`)
 
 - [ ] **FASE 6 CUMPLIDA**
 
-### Fase 7 · Entrega (día de entrega del proyecto)
+### Fase 7 · Autenticación — conectar la home
+
+- [x] Estructura extensible a gratuito / premium / curso / suscripción (`entitlements`, hecha en la Fase 0)
+- [ ] Conectar las tarjetas de la sección "Videoteca" de la home al catálogo real
+- [ ] Filtros por nivel/categoría (si ya estaban en el diseño estático)
+
+- [ ] **FASE 7 CUMPLIDA**
+
+### Fase 8 · Panel administrativo — listado
+
+- [ ] Listado de clases: título, video, estado, fecha y acciones
+- [ ] Acceso solo para propietario y desarrolladores (rol `owner` o `developer`)
+- [ ] Filtros/orden básicos (publicadas, borradores, con error de video)
+
+- [ ] **FASE 8 CUMPLIDA**
+
+### Fase 9 · Panel administrativo — alta y edición
+
+- [ ] Formulario: título, descripción, categoría, nivel, acceso (gratis/restringido), orden
+- [ ] Miniatura: subida de imagen a Supabase Storage
+- [ ] Editar una clase existente
+
+- [ ] **FASE 9 CUMPLIDA**
+
+### Fase 10 · Panel administrativo — subida de video
+
+- [ ] Subida del video con barra de progreso (PUT directo a R2)
+- [ ] Confirmación automática al terminar (`admin-sync-video` + duración calculada en el navegador)
+- [ ] Reintentar una subida que quedó pendiente o con error
+
+- [ ] **FASE 10 CUMPLIDA**
+
+### Fase 11 · Panel administrativo — publicar y borrar
+
+- [ ] Publicar / despublicar (no se puede publicar sin video listo)
+- [ ] Eliminar clase (borra el objeto en R2 primero; si falla, no borra nada)
+- [ ] Confirmaciones antes de las acciones destructivas
+
+- [ ] **FASE 11 CUMPLIDA**
+
+### Fase 12 · Cuentas reales — infraestructura
+
+- [ ] Crear el proyecto en Supabase y aplicar la migración (`npm run sb:db-push`)
+- [ ] Crear el bucket en Cloudflare R2 y el token de API (permiso Object Read & Write, ver Fase 0)
+- [ ] Cargar los secretos del backend (`npm run sb:secrets`) y correr `npm run doctor:online`
+
+- [ ] **FASE 12 CUMPLIDA**
+
+### Fase 13 · Prueba con un solo video real
+
+- [ ] Upload a R2 real · confirmación de subida (`admin-sync-video`) · asociación con Supabase
+- [ ] Reproducción · autenticación · seguridad (probar que una URL suelta no sirve)
+- [ ] `npm run test:integration` en verde contra las cuentas reales
+
+- [ ] **FASE 13 CUMPLIDA**
+
+### Fase 14 · Prueba con un solo video — progreso, responsive y costo
+
+- [ ] Progreso y "continuar" con el video real
+- [ ] Responsive: escritorio y móvil (Chrome, Safari iOS)
+- [ ] Validar el costo real de almacenamiento y ajustar la estimación de la Fase 0
+
+- [ ] **FASE 14 CUMPLIDA**
+
+### Fase 15 · Escalado — varios videos
+
+- [ ] 1 → 3 → 10 videos, cargados desde el panel sin tocar código
+- [ ] Revisar tiempos de subida y de listado con más contenido
+
+- [ ] **FASE 15 CUMPLIDA**
+
+### Fase 16 · Escalado — catálogo completo
+
+- [ ] Cargar el catálogo completo (~40 videos)
+- [ ] Revisar costos con uso real (almacenamiento en R2, base de Supabase)
+
+- [ ] **FASE 16 CUMPLIDA**
+
+### Fase 17 · Entrega — dominio y correo
 
 - [ ] Dominio propio conectado y `ALLOWED_ORIGINS` con el dominio final (sin `localhost` ni comodines)
-- [ ] SMTP propio configurado para la recuperación de contraseña (ver sección más abajo) + SPF/DKIM/DMARC
+- [ ] SMTP propio configurado para la recuperación de contraseña + SPF/DKIM/DMARC
+
+- [ ] **FASE 17 CUMPLIDA**
+
+### Fase 18 · Entrega — monitoreo y respaldo
+
 - [ ] Monitor de UptimeRobot activo y probado (que el proyecto gratuito de Supabase no se pause)
 - [ ] Copia de seguridad manual de la base antes de abrir el registro al público (el plan gratuito no la incluye)
+
+- [ ] **FASE 18 CUMPLIDA**
+
+### Fase 19 · Entrega — recorrido y traspaso
+
 - [ ] Recorrido completo con el cliente: subir un video, publicarlo, verlo como usuario, borrar de prueba
 - [ ] Traspaso de accesos: quién queda con las claves de Supabase, Cloudflare y Hostinger
 - [ ] Documentación de puesta en marcha entregada y revisada (`docs/PUESTA-EN-MARCHA.md`)
 
-- [ ] **FASE 7 CUMPLIDA — PROYECTO ENTREGADO**
+- [ ] **FASE 19 CUMPLIDA**
+
+### Fase 20 · Entrega — cierre (día de entrega del proyecto)
+
+- [ ] Todas las fases anteriores cumplidas
+- [ ] Última pasada de `npm run verify` + `npm run test:e2e` en verde
+- [ ] Firma de conformidad / aceptación del cliente
+
+- [ ] **FASE 20 CUMPLIDA — PROYECTO ENTREGADO**
 
 ---
 
 ## Tareas externas pendientes
 
-Dependen de las cuentas del cliente (yo no tengo acceso a ellas); bloquean el cierre de la Fase 5 en
+Dependen de las cuentas del cliente (yo no tengo acceso a ellas); bloquean el cierre de la Fase 12 en
 adelante:
 
 - [ ] Crear el proyecto en **Supabase** y aplicar la migración
