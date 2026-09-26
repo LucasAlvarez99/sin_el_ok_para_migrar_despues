@@ -222,6 +222,33 @@ await test('reproductor: controles, velocidad y teclado (video progresivo, sin s
   await waitFor(page, () => document.querySelector('.yp-player').dataset.state === 'paused');
 });
 
+await test('reproductor: duración, volumen y buscar con la barra de progreso', async (page) => {
+  await signup('ana@test.dev');
+  await openClass(page, IDS.free);
+  await loginViaModal(page, 'ana@test.dev');
+  await page.waitForSelector('.yp-player');
+  await playAndWait(page);
+  // duración: el video de prueba (fixture de media.mjs) dura 12 s
+  await waitFor(page, () => document.querySelector('.yp-dur').textContent === '0:12');
+  // volumen: mover el slider cambia video.volume de verdad (no solo la UI)
+  await page.$eval('.yp-volume', (i) => { i.value = '0.2'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.ok(Math.abs((await page.$eval('.yp-video', (v) => v.volume)) - 0.2) < 0.01, 'el slider no cambió el volumen real');
+  // silenciar con el botón, y volver a activar
+  await page.click('.yp-mute');
+  assert.equal(await page.$eval('.yp-video', (v) => v.muted), true);
+  await page.click('.yp-mute');
+  assert.equal(await page.$eval('.yp-video', (v) => v.muted), false);
+  // arrastrar la barra de progreso a la mitad busca de verdad en el video
+  await page.$eval('.yp-seek', (i) => {
+    i.value = String(Number(i.max) / 2);
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    i.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await waitFor(page, () => document.querySelector('.yp-video').currentTime > 5, null, 5000);
+  // pantalla completa: existe el control (headless no siempre puede entrar a fullscreen real)
+  assert.equal(await page.$eval('.yp-full', (b) => b.getAttribute('aria-label')), 'Pantalla completa');
+});
+
 await test('acceso denegado: clase restringida sin permiso → mensaje claro; con permiso → reproduce', async (page) => {
   await signup('ana@test.dev');
   await openClass(page, IDS.restricted);

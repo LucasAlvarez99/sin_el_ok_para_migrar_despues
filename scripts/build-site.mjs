@@ -3,23 +3,31 @@
  * Arma dist/ con SOLO los archivos públicos del sitio. Esa carpeta es lo único que se sube
  * a Hostinger: por construcción no puede llevarse .env, supabase/, scripts/ ni node_modules.
  *
- * Incluye: los *.html de la raíz, y las carpetas css/, js/, assets/ y admin/ (si existen).
+ * El código fuente de las páginas vive organizado en pages/ (para no mezclarlo con css/, js/,
+ * assets/ y el resto del repo), pero el sitio publicado necesita los .html en la RAÍZ
+ * (yogapopup.com/videoteca.html, no yogapopup.com/pages/videoteca.html): por eso acá se
+ * "aplanan" al copiarlos a dist/.
+ *
+ * Incluye: los *.html de pages/, y las carpetas css/, js/, assets/ y admin/ (si existen).
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const pagesDir = join(root, "pages");
 const dist = join(root, "dist");
 const PUBLIC_DIRS = ["css", "js", "assets", "admin"];
+
+if (!existsSync(pagesDir)) throw new Error(`No existe ${pagesDir}: ¿se movieron las páginas de lugar?`);
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist);
 
 const copied = [];
-for (const f of readdirSync(root)) {
+for (const f of readdirSync(pagesDir)) {
   if (f.endsWith(".html")) {
-    cpSync(join(root, f), join(dist, f));
+    cpSync(join(pagesDir, f), join(dist, f)); // aplanado: pages/x.html -> dist/x.html
     copied.push(f);
   }
 }

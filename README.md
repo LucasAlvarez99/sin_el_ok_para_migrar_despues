@@ -25,8 +25,8 @@ web sigue siendo el sitio estático actual alojado en **Hostinger** (sin videos 
 > `logo-oscuro.png`) en navbar, pie y favicon; paleta verificada contra el manual de marca; redes sociales reales
 > (WhatsApp, Instagram, YouTube) en los pies de página.
 >
-> **Aún no existe:** reproductor de video terminado (Fase 1), panel técnico interno (solo desarrolladores),
-> reconciliación programada, pagos y tienda.
+> **Aún no existe:** guardado periódico de progreso en pantalla (Fase 3-4), panel técnico interno (solo
+> desarrolladores), reconciliación programada, pagos y tienda.
 >
 > ```bash
 > nvm use && npm ci                              # instalación reproducible
@@ -45,8 +45,8 @@ Leyenda: ✅ cumplida · 🟡 código listo, falta validarla con cuentas reales 
 | Fase | Qué es | Estado |
 |---|---|---|
 | 0 | Auditoría + modelo de datos + backend de video (R2) | ✅ |
-| 1 | Reproductor — estructura y controles básicos | ⬜ |
-| 2 | Reproductor — reanudar, renovar y errores | ⬜ |
+| 1 | Reproductor — estructura y controles básicos | ✅ |
+| 2 | Reproductor — reanudar, renovar y errores | ✅ |
 | 3 | Progreso — guardado periódico | ⬜ |
 | 4 | Progreso — interfaz | ⬜ |
 | 5 | Autenticación — login, registro y sesión | ⬜ |
@@ -101,22 +101,31 @@ Detalle de cada fase, con sus tareas, más abajo en [Fases](#fases).
 
 ```
 yogapopup/
-├── index.html · css/ · js/ · assets/    Sitio actual (diseño intacto)
-│   └── js/config.js                     Config PÚBLICA del frontend (placeholders)
+├── pages/                                Código fuente de las páginas (index, videoteca, clase, cuenta, panel)
+├── css/ · js/ · assets/                  Estilos, JS y recursos; los usan las páginas de pages/
+│   └── js/config.js                      Config PÚBLICA del frontend (placeholders)
 ├── supabase/
-│   ├── migrations/                      Base de datos: tablas, RLS, permisos (Fase 2)
+│   ├── migrations/                       Base de datos: tablas, RLS, permisos (Fase 0)
 │   ├── functions/
-│   │   ├── _shared/                     Capa R2, auth, repositorio, HTTP (Fase 3)
-│   │   ├── _tests/                      47 pruebas automáticas
+│   │   ├── _shared/                      Capa R2, auth, repositorio, HTTP (Fase 0)
+│   │   ├── _tests/                       47 pruebas automáticas
 │   │   ├── admin-create-upload/  admin-sync-video/  admin-delete-class/
 │   │   └── playback/  health/
-│   ├── .env  ·  .env.example            Secretos del BACKEND (R2)
+│   ├── .env  ·  .env.example             Secretos del BACKEND (R2)
 │   ├── config.toml · promote_role.example.sql · README.md
-├── scripts/                             supabase.mjs (atajos CLI) · build-site.mjs (arma dist/)
-├── .env  ·  .env.example                Variables de las herramientas locales
-├── .htaccess                            Bloquea archivos sensibles en Hostinger
-└── package.json                         Scripts y herramientas de desarrollo
+├── scripts/
+│   ├── dev-server.mjs                    Servidor de desarrollo (sirve pages/ en la raíz del sitio)
+│   ├── build-site.mjs                    Arma dist/ (pages/*.html aplanados + css/, js/, assets/)
+│   └── supabase.mjs                      Atajos del CLI de Supabase
+├── .env  ·  .env.example                 Variables de las herramientas locales
+├── .htaccess                             Bloquea archivos sensibles en Hostinger (viaja dentro de dist/)
+└── package.json                          Scripts y herramientas de desarrollo
 ```
+
+`pages/` existe solo en el repositorio, para no mezclar el HTML con css/js/assets/admin: tanto en
+desarrollo (`npm run dev`) como en el sitio publicado (`npm run build` → `dist/`) las páginas se sirven
+igual que antes, en la raíz (`/videoteca.html`, no `/pages/videoteca.html`).
+
 
 ---
 
@@ -259,20 +268,32 @@ ping de UptimeRobot a `/functions/v1/health` cada 5 min) y **no incluye copias d
 
 ### Fase 1 · Reproductor — estructura y controles básicos
 
-- [ ] Componente `VideoPlayer` reutilizable sobre `<video>` (reproducción progresiva desde R2) con el
-      diseño de YogaPop Up
-- [ ] Play/Pause · barra de progreso (click y arrastre) · volumen · pantalla completa · duración
-- [ ] Estados de carga y vacío (antes de que el video empiece a reproducirse)
+- [x] Componente `VideoPlayer` reutilizable sobre `<video>` (reproducción progresiva desde R2) con el
+      diseño de YogaPop Up (`js/components/video-player.js`, estilos en `css/app.css`)
+- [x] Play/Pause · barra de progreso (click y arrastre) · volumen (slider + silenciar) · pantalla completa
+      · duración
+- [x] Estados de carga y vacío: spinner mientras carga, botón grande de reproducir antes de empezar,
+      página con su propio estado de carga/sin sesión/sin acceso/video no listo/error (`js/pages/clase.js`)
+- [x] Cubierto por E2E en Chromium real: duración mostrada, volumen (slider real, no solo la UI), silenciar,
+      buscar arrastrando la barra, velocidad, teclado, selector de calidad oculto (R2 no transcodifica)
+
+- [x] **FASE 1 CUMPLIDA** — ya estaba construido de una sesión anterior; esta vuelta se revisó entero,
+      se le sumaron las pruebas E2E que le faltaban (duración, volumen, buscar con la barra) y se confirmó
+      que sigue funcionando después de la migración a R2.
 
 - [ ] **FASE 1 CUMPLIDA**
 
 ### Fase 2 · Reproductor — reanudar, renovar y errores
 
-- [ ] Continuar desde el último punto guardado (`resume_seconds` de `playback`)
-- [ ] Renovar la URL firmada sola si vence durante la reproducción (antes de que ocurra, y ante un 403)
-- [ ] Estado de error con reintento (video no listo, servicio caído, URL que no renueva)
+- [x] Continuar desde el último punto guardado (`resume_seconds` de `playback`), con opción "Empezar de cero"
+- [x] Renovar la URL firmada sola si vence durante la reproducción: preventivo (antes de que ocurra) y
+      reactivo (ante un 401/403), sin cortar la reproducción
+- [x] Estado de error con reintento (video no listo, servicio caído, URL que no logra renovarse tras 2 intentos)
+- [x] Cubierto por E2E en Chromium real: URL vencida al cargar, renovación preventiva a mitad de reproducción,
+      y el caso límite de que la renovación también falle (error visible + reintento que se recupera)
 
-- [ ] **FASE 2 CUMPLIDA**
+- [x] **FASE 2 CUMPLIDA** — ídem Fase 1: ya estaba hecho, se revisó y quedó confirmado con las pruebas
+      existentes (que también se migraron de Bunny/HLS a R2/progresivo).
 
 ### Fase 3 · Progreso — guardado periódico
 
