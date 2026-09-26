@@ -3,15 +3,22 @@
 Fecha de la auditoría: 20/09/2026 · Base: repositorio `sin_el_ok_para_migrar_despues` (commit `3c25ac4`) + trabajo en curso.
 Reglas de trabajo: [`CLAUDE.md`](../CLAUDE.md).
 
+> **Nota (25/09/2026):** esta auditoría se escribió cuando el video vivía en **Bunny Stream**. El 24/09/2026 se
+> migró a **Cloudflare R2** (ver [`README.md`](../README.md), sección "Fases", Fase 0). Se actualizaron acá las
+> menciones directas a Bunny/TUS/HLS para que no queden desactualizadas, pero **los números de pruebas y el
+> detalle punto por punto de este documento son una foto de aquel momento** y no se volvieron a verificar
+> entero contra el código actual; para el estado real y probado hoy, la referencia es `npm run verify` y el
+> conteo de pruebas en el `README.md`.
+
 Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
 
 ## 1. Qué existe hoy
 
 | Área | Estado real |
 |---|---|
-| Base de datos | `profiles`, `classes`, `entitlements`, `video_progress`; RLS en todas; privilegios por columna (los IDs de Bunny no son legibles); `can_access_class()`, `save_progress()`; bucket de miniaturas. **Probado en PostgreSQL** con esquema de Supabase simulado |
-| Backend | 6 Edge Functions (`admin-create-upload`, `admin-sync-video`, `admin-delete-class`, `playback`, `bunny-webhook`, `health`) con puertos/adaptadores; **43 pruebas** (firma idéntica a la oficial de Bunny, permisos, errores) |
-| Frontend | Sitio estático original. **En curso**: cliente Supabase, sesión, modal de acceso, reproductor HLS, tarjetas, guardado de progreso (código escrito, aún sin pruebas de navegador) |
+| Base de datos | `profiles`, `classes`, `entitlements`, `video_progress`; RLS en todas; privilegios por columna (la key de R2 no es legible); `can_access_class()`, `save_progress()`; bucket de miniaturas. **Probado en PostgreSQL** con esquema de Supabase simulado |
+| Backend | 5 Edge Functions (`admin-create-upload`, `admin-sync-video`, `admin-delete-class`, `playback`, `health`; sin webhook, R2 no transcodifica) con puertos/adaptadores; pruebas de firmas SigV4, permisos y errores |
+| Frontend | Sitio estático original. **En curso**: cliente Supabase, sesión, modal de acceso, reproductor de video progresivo (sin HLS: R2 no transcodifica), tarjetas, guardado de progreso (código escrito, aún sin pruebas de navegador) |
 | Pagos / tienda | No existe nada |
 
 ## 2. Huecos concretos frente a los 17 puntos
@@ -21,15 +28,15 @@ Leyenda: ✅ hecho y probado · 🟡 parcial / en curso · ⬜ no existe
 | 1 | Registro, login, logout, perfil, recuperación, sesión persistente | ✅ | Probado en navegador. Falta solo probar el cambio de contraseña desde el enlace del correo |
 | 2 | Catálogo real desde Supabase | ✅ | Home y videoteca con datos reales; carga, error, vacío y filtros probados |
 | 3 | Videoteca protegida | ✅ | `playback` protege en servidor; sin sesión, sin acceso y con acceso probados |
-| 4 | Reproductor hls.js | ✅ | Probado en Chromium con HLS real de 2 calidades |
-| 5 | URLs firmadas y renovación | ✅ | Firma verificada contra Bunny; renovación probada (vencida al cargar, siempre vencida y preventiva) |
+| 4 | Reproductor de video | 🟡 | Migrado de hls.js a reproducción progresiva (R2 no transcodifica); falta reprobar en Chromium |
+| 5 | URLs firmadas y renovación | 🟡 | Firma SigV4 de R2 (pruebas unitarias en verde); falta reprobar la renovación en navegador contra un bucket real |
 | 6 | Progreso (debounce, pausa, cambio de página, fin) | ✅ | 11 pruebas unitarias + E2E de guardado periódico, al pausar, al salir (keepalive) y al terminar |
 | 7 | "Continuar viendo" | ✅ | Sección en la videoteca, probada |
 | 8 | Panel de negocio y panel técnico separados | 🟡 | `/panel` existe (rol `owner`/`developer`) con listado y publicar/despublicar; **falta** `/interno` |
 | 9 | Crear, editar, publicar, despublicar, eliminar clases | 🟡 | Crear + subir video ✅, publicar/despublicar ✅ (todo con interfaz y auditado); **falta** editar metadatos de una clase ya creada; **borrado sigue siendo físico** (contra la regla, aunque ya tiene botón en el panel) |
-| 10 | Subida directa a Bunny con progreso | ✅ | Interfaz en `/panel` con barra de progreso, cancelar, reintentar y subida reanudable (TUS) |
-| 11 | Estados de vídeo | 🟡 | Hay 5 (`pending, uploading, processing, ready, failed`); **falta `abandoned`** |
-| 12 | Reintentos y reconciliación | 🟡 | Webhook + sincronización manual + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y huérfanos en Bunny |
+| 10 | Subida directa a R2 con progreso | 🟡 | Interfaz en `/panel` con barra de progreso, cancelar y reintentar; **ya no es reanudable** (R2 no soporta retomar un PUT simple: un corte a mitad de camino obliga a resubir el archivo entero) |
+| 11 | Estados de vídeo | 🟡 | Hay 5 (`pending, uploading, processing, ready, failed`); `processing` quedó sin uso real (R2 no transcodifica); **falta `abandoned`** |
+| 12 | Reintentos y reconciliación | 🟡 | Sincronización manual (`admin-sync-video` hace HEAD directo a R2, sin webhook) + retomar/reemplazar; **falta la reconciliación programada** y detectar subidas abandonadas y objetos huérfanos en R2 |
 | 13 | Base para pagos y entitlements | 🟡 | `entitlements` y `can_access_class()` ✅; **sin altas/bajas por casos de uso ni auditoría** |
 | 14 | Tests unitarios, integración y E2E | 🟡 | 46 de backend (con contrato), 16 del frontend y 23 E2E; **faltan** integración entre módulos y contratos del resto |
 | 15 | Tres niveles de acceso | 🟡 | **Hecho y probado:** roles `user`/`owner`/`developer`, guardas `requireOwner`/`requireDeveloper`, cambios de rol solo por desarrolladores, historial de auditoría inmutable. **Falta:** las superficies (paneles `/panel` e `/interno`) |
@@ -62,11 +69,11 @@ Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba
 
 ### Fase 3 · Ciclo de vida del vídeo y reconciliación
 - **Migración:** estado `abandoned`; `classes.deleted_at` (borrado lógico); `video_events`; `reconciliation_runs`.
-- **Archivos:** función programada `reconcile-videos` (Supabase cron): marca subidas abandonadas (pendientes > 24 h), detecta videos huérfanos en Bunny y filas sin video, purga tras un período de gracia.
-- **Pruebas:** unitarias con Bunny simulado (huérfano, faltante, abandonado, reintento) y de integración separada, omitida sin credenciales.
+- **Archivos:** función programada `reconcile-videos` (Supabase cron): marca subidas abandonadas (pendientes > 24 h), detecta objetos huérfanos en R2 y filas sin video, purga tras un período de gracia.
+- **Pruebas:** unitarias con R2 simulado (huérfano, faltante, abandonado, reintento) y de integración separada, omitida sin credenciales.
 
 ### Fase 4 · Panel de negocio (`/panel`, rol `owner`)  _(hecha: catálogo, crear clase, subir video, publicar/despublicar, eliminar)_
-- **Archivos:** `panel.html` + `js/pages/panel.js` + `js/ui/class-form-modal.js` (crear/reintentar con barra de progreso vía TUS); todo reutiliza funciones ya escritas en `js/lib/api.js` (`adminListClasses/CreateUpload/SyncVideo/UpdateClass/DeleteClass`, `uploadVideoToBunny`, `resizeImage`, `uploadThumbnail`) — no hizo falta backend nuevo. Auditoría de publicar/despublicar por trigger de base (`classes_audit_publish_change`, mismo patrón que `profiles_audit_role_change`) en vez de una Edge Function, porque RLS + privilegio por columna sobre `is_published` ya alcanzaban.
+- **Archivos:** `panel.html` + `js/pages/panel.js` + `js/ui/class-form-modal.js` (crear/reintentar con barra de progreso vía TUS); todo reutiliza funciones ya escritas en `js/lib/api.js` (`adminListClasses/CreateUpload/SyncVideo/UpdateClass/DeleteClass`, `uploadVideoToR2`, `resizeImage`, `uploadThumbnail`) — no hizo falta backend nuevo. Auditoría de publicar/despublicar por trigger de base (`classes_audit_publish_change`, mismo patrón que `profiles_audit_role_change`) en vez de una Edge Function, porque RLS + privilegio por columna sobre `is_published` ya alcanzaban.
 - **Pendiente:** editar metadatos de una clase ya creada, borrado lógico (hoy `adminDeleteClass` borra físico), usuarios, entitlements (conceder/revocar con auditoría), métricas.
 - **Pruebas:** `supabase/tests/classes_publish_audit.test.sql` (publicar sin video listo rechazado, publicar/despublicar audita con el actor real, editar otro campo no audita publicación, un usuario común no puede tocarlo). **Falta:** prueba E2E en navegador del flujo completo (crear → subir → publicar) — este entorno no tiene Chrome para escribirla contra un caso real; queda para la próxima sesión con navegador disponible.
 
@@ -107,6 +114,6 @@ Cada fase se cierra con formato + lint + typecheck + tests + build, y una prueba
 
 ## 5. Riesgos
 
-- **Integraciones sin credenciales:** Bunny, Supabase real, Paddle y la tienda no se pueden validar aquí; hay simulaciones fieles (la firma de Bunny se comparó con su código oficial) y pruebas de integración aparte, pero la primera prueba real con cuentas puede mostrar ajustes.
+- **Integraciones sin credenciales:** R2, Supabase real, Paddle y la tienda no se pueden validar aquí; hay simulaciones fieles y pruebas de integración aparte, pero la primera prueba real con cuentas puede mostrar ajustes.
 - **Alcance:** los puntos 15–17 son del tamaño de un producto entero; por eso van en fases y ninguna arranca sin cerrar la anterior.
-- **Coste:** con Paddle (comisión como comerciante de registro) y una tienda, el costo mensual deja de ser solo Bunny + Supabase; conviene estimarlo tras la decisión 3.
+- **Coste:** con Paddle (comisión como comerciante de registro) y una tienda, el costo mensual deja de ser solo R2 + Supabase; conviene estimarlo tras la decisión 3.

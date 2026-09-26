@@ -10,11 +10,11 @@ import { type ClassRow, type HandlerDeps, toPublicClass } from "../_shared/ports
  *  - Sin class_id: reserva una key en R2 + crea una clase nueva.
  *  - Con class_id, según el estado del video de esa clase:
  *      · sin video          -> reserva una key nueva y la asocia
- *      · pending            -> REANUDA: misma key, URL prefirmada nueva (aún no se subió nada,
+ *      · pending/uploading  -> REANUDA: misma key, URL prefirmada nueva (aún no se subió nada,
  *                               o la subida se cortó a mitad de camino: R2 no permite retomar
  *                               un PUT simple, así que el archivo se vuelve a subir entero)
  *      · failed             -> REEMPLAZA: key nueva (la vieja, si llegó a existir, se borra)
- *      · uploading/processing/ready -> 409, ya tiene un video en uso
+ *      · processing/ready   -> 409, ya tiene un video en uso
  */
 export function createHandler(deps: HandlerDeps) {
   const { r2, repo, auth, audit, config } = deps;
@@ -64,8 +64,7 @@ export function createHandler(deps: HandlerDeps) {
         const existing = await repo.getClass(classId);
         if (!existing) throw new HttpError(404, "class_not_found", "Class not found");
 
-        const inUse = existing.video_status === "processing" || existing.video_status === "ready" ||
-          existing.video_status === "uploading";
+        const inUse = existing.video_status === "processing" || existing.video_status === "ready";
         if (existing.r2_object_key && inUse) {
           throw new HttpError(409, "video_already_attached", "This class already has a video");
         }

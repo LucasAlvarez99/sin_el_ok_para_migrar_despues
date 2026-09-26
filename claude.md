@@ -13,18 +13,19 @@ cursos, suscripciones y tienda física.
 | Frontend | HTML + CSS + JavaScript estático (ES modules, sin build ni framework), Bootstrap 5.3.3 |
 | Backend | Supabase Edge Functions, TypeScript sobre Deno |
 | Datos | Supabase Postgres con RLS + Supabase Auth + Storage |
-| Vídeo | Bunny Stream: subida TUS directa desde el navegador, reproducción HLS con URL firmada (hls.js) |
+| Vídeo | Cloudflare R2: PUT prefirmado directo desde el navegador, reproducción progresiva con URL firmada (SigV4) |
 | Pagos (por construir) | Paddle (digital) y Stripe o Shopify (físico), detrás de adaptadores |
 
 **No se reescribe lo que ya funciona.** Ya existen y se conservan: autenticación y permisos en servidor, RLS,
-progreso (`save_progress`), firmas Bunny (verificadas contra el código oficial), webhook firmado y pruebas.
+progreso (`save_progress`), firmas R2 (SigV4 vía `aws4fetch`), confirmación de subida sin webhooks (HEAD directo
+al bucket en `admin-sync-video`) y pruebas.
 
 ## 2. Tres niveles de acceso (deben estar siempre separados)
 
 | Nivel | Superficie | Puede | No puede |
 |---|---|---|---|
 | **Usuario final** | Sitio público (`index.html`, `videoteca.html`, `clase.html`, cuenta) | Ver catálogo, reproducir lo que tenga permitido, guardar su progreso, editar su perfil, comprar | Ver o llamar nada de administración |
-| **Propietario** (`owner`) | Panel de negocio (`/panel`), fuera de la app de usuarios | Clases, publicación, catálogo, usuarios, entitlements, pedidos, métricas | Recibir secretos, service role, API keys de Bunny o acceso directo a Supabase/Bunny/infra |
+| **Propietario** (`owner`) | Panel de negocio (`/panel`), fuera de la app de usuarios | Clases, publicación, catálogo, usuarios, entitlements, pedidos, métricas | Recibir secretos, service role, claves de R2 o acceso directo a Supabase/R2/infra |
 | **Desarrollador** (`developer`) | Panel técnico interno (`/interno`), separado del de negocio | Diagnóstico, reconciliación, configuración, mantenimiento | — (todo queda auditado) |
 
 - La autorización se valida **siempre en el servidor** (RLS + Edge Functions). Ocultar un botón nunca es un control.
@@ -42,31 +43,31 @@ interna de otro**. Sin dependencias circulares. Lo compartido vive solo en `comm
 | `auth` | Sesión, roles, guardas (`requireUser/Owner/Developer`) | common |
 | `profiles` | Perfil propio (lectura/edición) | common, auth |
 | `catalog` | Lectura del catálogo publicado | common |
-| `classes` | Alta/edición/publicación/borrado lógico de clases | common, auth, catalog, bunny |
-| `playback` | Decidir acceso y entregar URL firmada | common, auth, entitlements, bunny |
+| `classes` | Alta/edición/publicación/borrado lógico de clases | common, auth, catalog, r2 |
+| `playback` | Decidir acceso y entregar URL firmada | common, auth, entitlements, r2 |
 | `progress` | Guardado y lectura de progreso | common, auth |
 | `entitlements` | Derechos de acceso digital (conceder/revocar/consultar) | common, auth |
 | `payments` | Pedidos/cobros, agnóstico del proveedor; activa o revoca entitlements | common, entitlements |
 | `business-admin` | Casos de uso del panel de negocio | los módulos anteriores vía contrato |
-| `tech-tools` | Diagnóstico, reconciliación, configuración | common, auth, bunny, supabase |
+| `tech-tools` | Diagnóstico, reconciliación, configuración | common, auth, r2, supabase |
 | `supabase` | Adaptadores de repositorio y auth (única capa que habla con Supabase) | common |
-| `bunny` | Adaptador de Bunny (única capa que habla con Bunny) | common |
-| `webhooks` | Recepción firmada e idempotente (Bunny, Paddle, tienda) | common, bunny, payments |
+| `r2` | Adaptador de R2 (única capa que habla con Cloudflare R2) | common |
+| `webhooks` | Recepción firmada e idempotente (Paddle, tienda; el video ya no usa webhooks) | common, payments |
 
-Reglas: la **lógica de negocio no conoce Supabase ni Bunny** (usa puertos/interfaces); los proveedores se enchufan por
+Reglas: la **lógica de negocio no conoce Supabase ni R2** (usa puertos/interfaces); los proveedores se enchufan por
 **adaptadores**. Hoy el backend vive en `supabase/functions/_shared/` y el frontend en `js/{lib,ui,components,pages}`;
 la migración a módulos con contrato es la Fase 2 del plan y se hace **de forma incremental**, sin reescribir.
 
 ## 4. Seguridad: reglas no negociables
 
-1. Nunca exponer en el frontend: service role key, API keys de Bunny, secretos de webhooks, claves de pago.
+1. Nunca exponer en el frontend: service role key, claves de R2, secretos de webhooks, claves de pago.
    El propietario tampoco los recibe.
-2. **No** usar `select('*')` en tablas con columnas privadas (`classes` tiene `bunny_*` restringidas): listar columnas.
+2. **No** usar `select('*')` en tablas con columnas privadas (`classes` tiene `r2_object_key` restringida): listar columnas.
 3. **Nunca** conceder acceso por datos que envía el navegador (ni redirecciones de checkout): solo por webhook
    firmado y verificado en servidor.
 4. Toda operación sensible: autorización en servidor + **rate limiting** + entrada validada.
 5. Webhooks y operaciones administrativas: **idempotentes** (clave de idempotencia / registro de eventos).
-6. No borrar filas de Postgres ni vídeos de Bunny sin estrategia de reconciliación (borrado lógico + tarea de limpieza).
+6. No borrar filas de Postgres ni objetos de R2 sin estrategia de reconciliación (borrado lógico + tarea de limpieza).
 7. Conservar y revisar las políticas RLS existentes; toda tabla nueva nace con RLS y privilegios mínimos.
 8. Los textos de usuarios se insertan como texto (`el()` / `textContent`), nunca con `innerHTML`.
 
@@ -96,7 +97,7 @@ npm run verify               # formato + lint + tipos + pruebas unitarias
 npm run test:web             # pruebas unitarias del frontend y de doctor (Deno, sin dependencias nuevas)
 npm run test:db              # base de datos: migraciones + permisos por rol (requiere PostgreSQL)
 npm run doctor[:online]      # revisa la configuración para producción
-npm run test:integration     # prueba real contra Supabase+Bunny (se omite sin credenciales)
+npm run test:integration     # prueba real contra Supabase+R2 (se omite sin credenciales)
 npm run test:e2e             # E2E en navegador (requiere Chrome/Chromium: ver README)
 npm run build                # arma dist/ con solo los archivos públicos
 npm run sb:db-push | sb:secrets | sb:deploy   # despliegue (ver supabase/README.md)
@@ -106,8 +107,10 @@ npm run sb:db-push | sb:secrets | sb:deploy   # despliegue (ver supabase/README.
 
 - `classes.classes_published_requires_ready`: no se puede publicar sin `video_status = 'ready'`; al fallar un video hay
   que despublicar en la misma operación.
-- Los números de estado del **webhook** de Bunny y los de la **API** son distintos: el webhook solo avisa; el estado
-  real se consulta a la API.
+- R2 no transcodifica: no existe un estado "processing" real, solo se conserva por compatibilidad con datos viejos.
+  `admin-sync-video` decide todo con un HEAD directo al objeto, nunca confiando en lo que diga el cliente.
+- La regex que valida las keys de R2 debe rechazar explícitamente `".."` y `"/"` al inicio: permitir `.` y `/` para
+  rutas tipo `classes/<id>/archivo.mp4` casi habilita path traversal por accidente (bug real, atrapado por las pruebas).
 - Al capturar un valor "anterior" de una fila, hacerlo **antes** de actualizarla (bug real detectado por las pruebas).
 - Las carpetas `_tests` y `_shared` empiezan con guion bajo para que el CLI de Supabase no las despliegue como funciones.
 - Un `.env` servido por un servidor estático queda público: publicar **solo** `dist/`.

@@ -1,9 +1,9 @@
 # Puesta en marcha con cuentas reales
 
-Guía para pasar de "todo probado con simulaciones" a "el sitio funcionando con Supabase, Bunny y Hostinger".
+Guía para pasar de "todo probado con simulaciones" a "el sitio funcionando con Supabase, Cloudflare R2 y Hostinger".
 Cada paso indica **quién** lo hace y **cómo comprobar** que salió bien. Tiempo total estimado: 2–3 horas.
 
-> Regla de oro: las claves privadas (Bunny, service role) **solo** van en `supabase/.env`. En `js/config.js` solo van
+> Regla de oro: las claves privadas (R2, service role) **solo** van en `supabase/.env`. En `js/config.js` solo van
 > datos públicos. `npm run doctor` lo comprueba por ti.
 
 ## 0 · Qué necesita el cliente (una sola vez)
@@ -11,7 +11,7 @@ Cada paso indica **quién** lo hace y **cómo comprobar** que salió bien. Tiemp
 | Qué | Para qué | Nota |
 |---|---|---|
 | Cuenta en **Supabase** | Usuarios, clases, progreso | Región **UE** (Frankfurt o Irlanda). Guarda la contraseña de la base |
-| Cuenta en **Bunny** (con método de pago) | Videos | Crear una *Video Library* |
+| Cuenta en **Cloudflare** (con método de pago si se supera el nivel gratis) | Videos | Crear un bucket de **R2** |
 | Acceso a **Hostinger** (FTP o Git) | Publicar la web | Solo sirve archivos estáticos |
 | Cuenta en **UptimeRobot** (gratis) | Evitar que Supabase se pause | |
 | **Dominio** definitivo | CORS y enlaces de correo | Ej. `https://yogapopup.es` |
@@ -52,13 +52,16 @@ npm run doctor             # ahora marcará ✗ lo que falta: es lo esperado
 Registros DNS del dominio remitente: **SPF, DKIM y DMARC** (los da el proveedor de correo).
 Detalle en [`supabase/README.md`](../supabase/README.md#recuperación-de-contraseña-en-producción).
 
-## 4 · Bunny (cliente o desarrollador)
+## 4 · Cloudflare R2 (cliente o desarrollador)
 
-1. Stream → *Add Video Library* (región Europa). En **Encoding** deja solo las resoluciones necesarias (720p suele bastar).
-2. En la pestaña **API** de la librería anota: *Library ID*, *API Key*, *Read-Only API Key* y el *CDN hostname* (`vz-….b-cdn.net`).
-3. Pull Zone de la librería → **Security → Token Authentication**: actívala (modo **Advanced**) y copia la *URL Token Authentication Key*.
-4. Librería → **Webhooks**: `https://<REFERENCE_ID>.supabase.co/functions/v1/bunny-webhook`.
-5. (Opcional) Librería → Security → *Allowed domains*: tu dominio.
+1. Dashboard de Cloudflare → **R2** → *Create bucket* (ej. `yogapopup-videos`). Ubicación automática está bien.
+2. R2 → Overview: anota el **Account ID**.
+3. R2 → *Manage API Tokens* → *Create API Token*: permiso **Object Read & Write**, restringido **a ese bucket**
+   (no "Admin Read & Write" de toda la cuenta). Copia el **Access Key ID** y la **Secret Access Key**
+   (la secret no se vuelve a mostrar: si se pierde, hay que crear un token nuevo).
+4. **No** actives acceso público al bucket ni un dominio público (`r2.dev` o dominio propio) para él: todo el
+   acceso al video pasa por las URLs firmadas que generan las Edge Functions. Un bucket público lo dejaría
+   viendo cualquiera con el link, sin pasar por `can_access_class()`.
 
 ## 5 · Secretos del backend y funciones (desarrollador)
 
@@ -84,8 +87,9 @@ Debe terminar con **0 errores**. Los avisos (`!`) se leen y se deciden (p. ej. `
 ## 8 · Primer video real (desarrollador)
 
 El panel de gestión llega en una fase posterior. Mientras tanto:
-1. Sube el video en Bunny (Stream → tu librería → Upload) y espera a que termine.
-2. Ejecuta `supabase/first_class.example.sql` en el SQL Editor con el *Video ID*, el *Library ID* y la duración.
+1. Sube el video al bucket de R2 con una key del tipo `classes/<uuid>/archivo.mp4` (con el dashboard de
+   Cloudflare, `rclone`, o el AWS CLI apuntando al endpoint de R2: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`).
+2. Ejecuta `supabase/first_class.example.sql` en el SQL Editor con esa key y la duración del video en segundos.
 3. Crea una cuenta de prueba **confirmada** y prueba la integración real:
 
 ```bash
@@ -94,8 +98,8 @@ YP_TEST_EMAIL=prueba@tudominio.com YP_TEST_PASSWORD=... YP_CLASS_ID=<id de la cl
 npm run test:integration
 ```
 
-Los 9 pasos deben salir ✓. El paso 6 (**segmentos**) es el que confirma que Bunny real hereda el token de la ruta;
-el 8 confirma que **sin token el video no se puede ver**.
+Los 9 pasos deben salir ✓. El paso 7 confirma que R2 soporta Range requests (necesario para buscar dentro del
+video); el 8 confirma que **sin la firma el video no se puede ver** (el bucket no es público).
 
 ## 9 · Publicar la web (desarrollador + cliente)
 
@@ -117,9 +121,9 @@ Evita que el plan gratuito de Supabase se pause por inactividad y avisa si la ba
 |---|---|---|
 | `doctor`: "Función health … estado 404" | Funciones sin desplegar | `npm run sb:deploy` |
 | `doctor`: "CORS … no permitido" | `ALLOWED_ORIGINS` sin el dominio | Corregir `supabase/.env` y `npm run sb:secrets` |
-| Integración paso 6 ✗ 403 en segmentos | Token Authentication no está en modo Advanced, o clave equivocada | Revisar el Pull Zone y `BUNNY_TOKEN_AUTH_KEY` |
-| Integración paso 8 ✗ (se ve sin token) | Token Authentication desactivada | Activarla en el Pull Zone |
-| El navegador bloquea el video por CORS | El Pull Zone no envía cabeceras CORS | Pull Zone → Headers → activar CORS |
+| Integración paso 6/7 ✗ (403 o sin Range) | `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` equivocadas, o el token no tiene permiso sobre el bucket | Revisar el token en R2 → Manage API Tokens |
+| Integración paso 8 ✗ (se ve sin firma) | El bucket tiene acceso público activado | Desactivar el acceso público / el dominio `r2.dev` del bucket |
+| El navegador bloquea el video por CORS | El navegador sube directo a R2 (PUT) y el bucket no tiene una política de CORS | R2 → bucket → Settings → CORS Policy: permitir `PUT`, `GET`, `HEAD` desde tu dominio |
 | Registro OK pero no llega el correo | SMTP, SPF/DKIM o límite de envíos | Supabase → Logs → Auth y la bandeja de spam |
 | "Demasiados intentos" al recuperar contraseña | Límite de Supabase (~1 por minuto por correo) | Esperar un minuto |
 | Nadie puede registrarse | *Enable sign ups* desactivado | Authentication → Sign In / Providers |

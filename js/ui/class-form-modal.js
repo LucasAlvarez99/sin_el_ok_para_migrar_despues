@@ -5,11 +5,11 @@ import { adminCreateUpload, adminSyncVideo, adminUpdateClass, readVideoDuration,
 import { toast } from './toast.js';
 
 /**
- * Fase 5, parte 2: crear una clase y subir su video (con barra de progreso), o reintentar la
- * subida de una clase existente cuyo video quedó pendiente/incompleto/con error.
+ * Fase 4 (panel administrativo): crear una clase y subir su video (con barra de progreso), o
+ * reintentar la subida de una clase existente cuyo video quedó pendiente/incompleto/con error.
  *
- * El video SIEMPRE se sube directo del navegador a Bunny (TUS): el archivo nunca pasa por
- * nuestro backend. `admin-create-upload` solo prepara las credenciales.
+ * El video SIEMPRE se sube directo del navegador a R2 (PUT prefirmado): el archivo nunca pasa
+ * por nuestro backend. `admin-create-upload` solo prepara la URL firmada.
  */
 let modalEl, bsModal, bodyEl, titleEl;
 const ACCESS_LABELS = { free: 'Gratis', restricted: 'Contenido restringido' };

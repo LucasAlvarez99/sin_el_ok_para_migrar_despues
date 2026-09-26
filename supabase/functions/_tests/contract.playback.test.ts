@@ -1,19 +1,27 @@
 import assert from "node:assert/strict";
 import { createHandler } from "../playback/handler.ts";
-import { LIB, makeDeps, post } from "./fakes.ts";
+import { makeDeps, post } from "./fakes.ts";
 
 /**
  * Contrato entre la función `playback` (backend) y las páginas que la consumen (frontend).
  * Si alguien renombra un campo de un lado y no del otro, esta prueba falla.
  */
-const CONTRACT_KEYS = ["class_id", "completed", "duration_seconds", "expires_at", "hls_url", "resume_seconds", "title"];
+const CONTRACT_KEYS = [
+  "class_id",
+  "completed",
+  "duration_seconds",
+  "expires_at",
+  "resume_seconds",
+  "title",
+  "video_url",
+];
 
 Deno.test("contrato: la respuesta REAL de playback tiene exactamente los campos que el frontend espera", async () => {
-  const { deps, repo } = makeDeps();
-  const v = await deps.bunny.createVideo("v");
+  const { deps, repo, r2 } = makeDeps();
+  const key = r2.newObjectKey(crypto.randomUUID());
+  r2.putObject(key);
   const c = repo.addClass({
-    bunny_video_id: v.guid,
-    bunny_library_id: LIB,
+    r2_object_key: key,
     video_status: "ready",
     is_published: true,
     duration_seconds: 2700,

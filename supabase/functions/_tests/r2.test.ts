@@ -56,14 +56,14 @@ Deno.test("R2Service: headObject existente / inexistente", async () => {
   const r2 = makeR2((input) => {
     const req = input as Request;
     calls.push(req.method);
-    if (req.url.includes("existe.mp4")) {
+    if (req.url.includes("/presente.mp4")) {
       return Promise.resolve(new Response(null, { status: 200, headers: { "content-length": "1234" } }));
     }
     return Promise.resolve(new Response(null, { status: 404 }));
   });
-  const a = await r2.headObject("classes/x/existe.mp4");
+  const a = await r2.headObject("classes/x/presente.mp4");
   assert.deepEqual(a, { exists: true, size: 1234 });
-  const b = await r2.headObject("classes/x/no-existe.mp4");
+  const b = await r2.headObject("classes/x/ausente.mp4");
   assert.deepEqual(b, { exists: false });
   assert.deepEqual(calls, ["HEAD", "HEAD"]);
 });

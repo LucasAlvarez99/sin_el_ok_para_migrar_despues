@@ -95,7 +95,7 @@ function classRow(row) {
   }
   if (row.video_status === 'processing' || row.video_status === 'uploading') {
     actions.push(el('button', {
-      type: 'button', class: 'btn btn-sm btn-outline-secondary', title: 'Consultar a Bunny el estado actual',
+      type: 'button', class: 'btn btn-sm btn-outline-secondary', title: 'Consultar a R2 el estado actual',
       onclick: (e) => refreshStatus(row, e.currentTarget),
     }, icon('arrow-repeat')));
   }

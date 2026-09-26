@@ -2,7 +2,7 @@
  * Configuración PÚBLICA del frontend (se descarga en el navegador de cualquier visitante).
  *
  * Estos valores NO son secretos: la "anon key" está pensada para el navegador y la protegen
- * las políticas RLS de la base. NUNCA pegar acá la service role key ni claves de Bunny:
+ * las políticas RLS de la base. NUNCA pegar acá la service role key ni claves de R2:
  * esas viven solo en supabase/.env (backend).
  *
  * Completar con: Supabase > Project Settings > API.

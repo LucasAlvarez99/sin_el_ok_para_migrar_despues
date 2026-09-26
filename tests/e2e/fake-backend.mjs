@@ -3,9 +3,10 @@
  * `supabase-js` REAL (no un doble en el navegador):
  *   /auth/v1/*       GoTrue mínimo (registro, login, sesión, recuperar, cerrar sesión)
  *   /rest/v1/*       PostgREST mínimo (filtros, orden, embebidos, RPC) con la misma regla de privilegios:
- *                    pedir columnas bunny_* de `classes` devuelve 401, como en la base real
+ *                    pedir la columna r2_object_key de `classes` devuelve 401, como en la base real
  *   /functions/v1/*  contrato de `playback` (la lógica real de esa función tiene sus propias pruebas en Deno)
- * Más un CDN que valida el token en la RUTA como Bunny (/bcdn_token=…&token_path=…&expires=…/<guid>/…).
+ * Más un servidor que simula R2: exige una firma en la query (como el SigV4 real) y responde con
+ * Range requests, ya que R2 no transcodifica: se sirve un único archivo progresivo.
  * Nada de esto se usa fuera de las pruebas.
  */
 import http from 'node:http';
@@ -20,33 +21,34 @@ export const IDS = {
   second: '00000000-0000-4000-8000-000000000003',
   hidden: '00000000-0000-4000-8000-000000000004',
 };
-const TOKEN_KEY = 'e2e-token-auth-key';
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json', '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t' };
-const PRIVATE_COLS = ['bunny_video_id', 'bunny_library_id'];
+const R2_SECRET = 'e2e-r2-secret';
+const KEY_OF = (classId) => `classes/${classId}/video.mp4`;
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json', '.mp4': 'video/mp4' };
+const PRIVATE_COLS = ['r2_object_key'];
 
 const b64url = (buf) => Buffer.from(buf).toString('base64url');
 const fakeJwt = (sub, ttl = 3600) => `${b64url('{"alg":"HS256","typ":"JWT"}')}.${b64url(JSON.stringify({ sub, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + ttl }))}.sig`;
 
 function seed() {
   const now = new Date().toISOString();
-  const base = { description: null, thumbnail_url: null, level: 'principiante', category: null, access_level: 'free', sort_order: 0, is_published: true, published_at: now, video_status: 'ready', duration_seconds: 12, created_at: now, updated_at: now, bunny_video_id: IDS.free };
+  const base = { description: null, thumbnail_url: null, level: 'principiante', category: null, access_level: 'free', sort_order: 0, is_published: true, published_at: now, video_status: 'ready', duration_seconds: 12, created_at: now, updated_at: now, r2_object_key: KEY_OF(IDS.free) };
   return {
     users: new Map(), sessions: new Map(), recoveries: [], progress: new Map(), entitlements: new Set(),
     classes: [
       { ...base, id: IDS.free, title: 'Yoga para principiantes', description: 'Una práctica suave para empezar.\nSin prisa.', category: 'Vinyasa' },
-      { ...base, id: IDS.restricted, title: 'Curso avanzado (restringido)', access_level: 'restricted', level: 'avanzado', category: 'Fuerza', sort_order: 1 },
-      { ...base, id: IDS.second, title: 'Relajación profunda', level: 'todos', category: 'Relajación', sort_order: 2 },
-      { ...base, id: IDS.hidden, title: 'Borrador oculto', is_published: false, published_at: null },
+      { ...base, id: IDS.restricted, title: 'Curso avanzado (restringido)', access_level: 'restricted', level: 'avanzado', category: 'Fuerza', sort_order: 1, r2_object_key: KEY_OF(IDS.restricted) },
+      { ...base, id: IDS.second, title: 'Relajación profunda', level: 'todos', category: 'Relajación', sort_order: 2, r2_object_key: KEY_OF(IDS.second) },
+      { ...base, id: IDS.hidden, title: 'Borrador oculto', is_published: false, published_at: null, r2_object_key: KEY_OF(IDS.hidden) },
     ],
     behavior: { catalogLatencyMs: 0, catalogFail: false, playbackTtl: 120, playbackForce: null, confirmEmail: false, saveFail: false },
-    log: { saves: [], playbackCalls: [], cdn: [] },
+    log: { saves: [], playbackCalls: [], r2: [] },
   };
 }
 
 export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, cdn: 4175 }, progressIntervalSeconds: initialInterval = 2 }) {
   let progressIntervalSeconds = initialInterval; // se puede cambiar por prueba con setProgressInterval()
   let db = seed();
-  const mediaDir = ensureMedia(IDS.free);
+  const mediaFile = ensureMedia(KEY_OF(IDS.free)); // todas las clases de prueba reusan el mismo archivo de video
   const origin = { site: `http://127.0.0.1:${ports.site}`, api: `http://127.0.0.1:${ports.api}`, cdn: `http://127.0.0.1:${ports.cdn}` };
 
   // ------------------------------------------------------------------ utilidades HTTP
@@ -141,7 +143,7 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
     return params.get('limit') ? out.slice(0, Number(params.get('limit'))) : out;
   }
   const pick = (row, cols) => Object.fromEntries(cols.map((c) => [c, row[c]]));
-  const classPublic = (c) => { const { bunny_video_id, bunny_library_id, ...rest } = c; return rest; };
+  const classPublic = (c) => { const { r2_object_key, ...rest } = c; return rest; };
 
   async function rest(req, res, url) {
     const table = url.pathname.replace('/rest/v1/', '');
@@ -227,14 +229,13 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
     const ttl = db.behavior.firstTtl != null ? db.behavior.firstTtl : db.behavior.playbackTtl;
     db.behavior.firstTtl = null; // de un solo uso
     const expiresAt = Math.floor(Date.now() / 1000) + ttl;
-    const tokenPath = `/${c.bunny_video_id}/`;
-    const token = `HS256-${createHmac('sha256', TOKEN_KEY).update(`${tokenPath}${expiresAt}token_path=${tokenPath}`).digest('base64url')}`;
+    const sig = createHmac('sha256', R2_SECRET).update(`${c.r2_object_key}:${expiresAt}`).digest('base64url');
     const prog = db.progress.get(`${user.id}|${c.id}`);
     const s = prog?.progress_seconds ?? 0;
     const finished = c.duration_seconds != null && s >= c.duration_seconds * 0.95;
     return send(res, 200, {
       class_id: c.id, title: c.title, duration_seconds: c.duration_seconds,
-      hls_url: `${origin.cdn}/bcdn_token=${token}&token_path=${encodeURIComponent(tokenPath)}&expires=${expiresAt}${tokenPath}playlist.m3u8`,
+      video_url: `${origin.cdn}/${c.r2_object_key}?X-Amz-Expires=${ttl}&X-Amz-Signature=${sig}&X-Amz-ExpiresAt=${expiresAt}`,
       expires_at: expiresAt, resume_seconds: s < 5 || finished ? 0 : s, completed: prog?.completed ?? false,
     });
   }
@@ -258,25 +259,34 @@ export async function startBackend({ siteRoot, ports = { site: 4173, api: 4174, 
     } catch (e) { console.error('[fake-backend]', e); return send(res, 500, { message: String(e) }); }
   });
 
-  // CDN estilo Bunny: el token viaja en la ruta y se hereda en los segmentos relativos.
+  // R2 simulado: exige la firma en la query (como el SigV4 real) y sirve un único archivo con Range.
   const cdn = http.createServer((req, res) => {
-    const record = (status, path) => db.log.cdn.push({ status, path: path.replace(/^\/bcdn_token=[^/]*/, '/<token>'), at: Date.now() });
+    const url = new URL(req.url, origin.cdn);
+    const key = decodeURIComponent(url.pathname.slice(1));
+    const record = (status) => db.log.r2.push({ status, key, at: Date.now() });
     const h = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
     if (req.method === 'OPTIONS') { res.writeHead(204, h); return res.end(); }
-    const m = /^\/bcdn_token=([^&]+)&token_path=([^&]+)&expires=(\d+)(\/.*)$/.exec(req.url.split('?')[0]);
-    const deny = (why) => { record(403, req.url.split('?')[0]); res.writeHead(403, h); res.end(why); };
-    if (!m) return deny('token required');
-    const [, token, tokenPathEnc, expires, rest] = m;
-    const tokenPath = decodeURIComponent(tokenPathEnc);
-    const expected = `HS256-${createHmac('sha256', TOKEN_KEY).update(`${tokenPath}${expires}token_path=${tokenPath}`).digest('base64url')}`;
-    if (token !== expected) return deny('bad token');
-    if (Number(expires) < Math.floor(Date.now() / 1000)) return deny('expired');
-    if (!rest.startsWith(tokenPath)) return deny('path outside token scope');
-    if (db.behavior.cdnRejectAll) return deny('rejected by test');
-    const file = normalize(join(mediaDir, rest.slice(tokenPath.length)));
-    if (!file.startsWith(mediaDir) || !existsSync(file) || !statSync(file).isFile()) { record(404, rest); res.writeHead(404, h); return res.end(); }
-    record(200, rest);
-    res.writeHead(200, { ...h, 'Content-Type': MIME[extname(file)] || 'application/octet-stream', 'Content-Length': statSync(file).size });
+    const deny = (status, why) => { record(status); res.writeHead(status, h); res.end(why); };
+    const sig = url.searchParams.get('X-Amz-Signature');
+    const expiresAt = Number(url.searchParams.get('X-Amz-ExpiresAt'));
+    if (!sig || !expiresAt) return deny(403, 'signature required');
+    const expected = createHmac('sha256', R2_SECRET).update(`${key}:${expiresAt}`).digest('base64url');
+    if (sig !== expected) return deny(403, 'bad signature');
+    if (expiresAt < Math.floor(Date.now() / 1000)) return deny(403, 'expired');
+    if (db.behavior.cdnRejectAll) return deny(403, 'rejected by test');
+    const file = normalize(mediaFile); // todas las clases de prueba comparten el mismo mp4 de fixture
+    if (!existsSync(file) || !statSync(file).isFile()) { record(404); res.writeHead(404, h); return res.end(); }
+    const size = statSync(file).size;
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    record(range ? 206 : 200);
+    if (range) {
+      const start = range[1] ? Number(range[1]) : 0;
+      const end = range[2] ? Number(range[2]) : size - 1;
+      res.writeHead(206, { ...h, 'Content-Type': MIME['.mp4'], 'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 });
+      createReadStream(file, { start, end }).pipe(res);
+      return;
+    }
+    res.writeHead(200, { ...h, 'Content-Type': MIME['.mp4'], 'Accept-Ranges': 'bytes', 'Content-Length': size });
     createReadStream(file).pipe(res);
   });
 

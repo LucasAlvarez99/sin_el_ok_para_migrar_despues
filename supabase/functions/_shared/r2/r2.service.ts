@@ -127,5 +127,7 @@ function encodeKeyPath(key: string): string {
 }
 
 function assertKey(key: string): void {
-  if (!KEY_RE.test(key)) throw new R2Error("Invalid R2 object key", 400, "validate");
+  if (!KEY_RE.test(key) || key.includes("..") || key.startsWith("/")) {
+    throw new R2Error("Invalid R2 object key", 400, "validate");
+  }
 }

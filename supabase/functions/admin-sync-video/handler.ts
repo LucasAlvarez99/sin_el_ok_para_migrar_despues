@@ -38,6 +38,8 @@ export function createHandler(deps: HandlerDeps) {
 function parseDuration(value: unknown): number | null {
   if (value === undefined || value === null) return null;
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new HttpError(400, "invalid_input", "duration_seconds must be a positive number");
+  if (!Number.isFinite(n) || n < 0) {
+    throw new HttpError(400, "invalid_input", "duration_seconds must be a positive number");
+  }
   return n;
 }

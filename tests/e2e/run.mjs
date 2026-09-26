@@ -1,11 +1,11 @@
 /**
- * Pruebas E2E en un navegador real (Chrome/Chromium) con video HLS real.
+ * Pruebas E2E en un navegador real (Chrome/Chromium) con un video mp4 real (R2 no transcodifica).
  *
  *   CHROME_PATH=/ruta/a/chrome npm run test:e2e
  *
  * Si no se define CHROME_PATH se buscan las rutas habituales de Chrome/Chromium/Edge.
- * Usa el `supabase-js` y `hls.js` reales del proyecto contra el backend de pruebas de fake-backend.mjs.
- * Requiere ffmpeg (genera un video HLS de 12 s con 2 calidades).
+ * Usa el `supabase-js` real del proyecto contra el backend de pruebas de fake-backend.mjs.
+ * Requiere ffmpeg (genera un video mp4 de 12 s).
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -197,19 +197,14 @@ await test('clase (sin sesión): pide iniciar sesión; un error de contraseña s
   assert.ok((await videoTime(page)) > 1.5);
 });
 
-await test('reproductor: controles, calidades reales de HLS, velocidad y teclado', async (page) => {
+await test('reproductor: controles, velocidad y teclado (video progresivo, sin selector de calidad)', async (page) => {
   await signup('ana@test.dev');
   await openClass(page, IDS.free);
   await loginViaModal(page, 'ana@test.dev');
   await page.waitForSelector('.yp-player');
   await playAndWait(page);
-  // calidades: Automática + 2 resoluciones del manifiesto real
-  await waitFor(page, () => !document.querySelector('.yp-menu-quality')?.closest('.yp-menuwrap')?.querySelector('.yp-text-btn').hidden);
-  const labels = await page.$$eval('.yp-menu-quality .yp-menu-item', (n) => n.map((x) => x.textContent.replace('✓ ', '')));
-  assert.deepEqual(labels, ['Automática', '360p', '180p']);
-  await page.click('.yp-menuwrap:nth-child(2) .yp-text-btn');
-  await page.evaluate(() => [...document.querySelectorAll('.yp-menu-quality .yp-menu-item')].find((b) => b.textContent.includes('180')).click());
-  await waitFor(page, () => /180p/.test(document.querySelector('.yp-qlabel').textContent));
+  // R2 no transcodifica: un solo archivo, sin selector de calidad (el botón queda oculto).
+  assert.equal(await page.$eval('.yp-menuwrap:nth-child(2) .yp-text-btn', (b) => b.hidden), true);
   // velocidad
   await page.click('.yp-menuwrap:nth-child(1) .yp-text-btn');
   await page.evaluate(() => [...document.querySelectorAll('.yp-menu-item')].find((b) => b.textContent.includes('1.5')).click());
@@ -234,7 +229,7 @@ await test('acceso denegado: clase restringida sin permiso → mensaje claro; co
   await page.waitForSelector('.clase-gate');
   await waitFor(page, () => /no está incluida en tu acceso/.test(document.querySelector('.clase-gate h2')?.textContent || ''));
   assert.equal(await count(page, '.yp-player'), 0, 'no debe existir el reproductor');
-  assert.ok(!(await page.content()).includes('playlist.m3u8'), 'no debe filtrarse ninguna URL de video');
+  assert.ok(!/X-Amz-Signature/.test(await page.content()), 'no debe filtrarse ninguna URL de video');
   await be.entitle('ana@test.dev', IDS.restricted);
   await page.reload();
   await page.waitForSelector('.yp-player', { timeout: 15000 });
@@ -282,8 +277,8 @@ await test('URL expirada al cargar: el reproductor pide otra y reproduce (sin in
   await playAndWait(page, 1.5);
   const { log } = await be.state();
   assert.ok(log.playbackCalls.length >= 2, `debía renovar la URL (llamadas: ${log.playbackCalls.length})`);
-  assert.ok(log.cdn.some((r) => r.status === 403), 'el CDN debió rechazar la URL vencida');
-  assert.ok(log.cdn.some((r) => r.status === 200 && /\.ts$/.test(r.path)), 'debió descargar segmentos con la URL nueva');
+  assert.ok(log.r2.some((r) => r.status === 403), 'R2 debió rechazar la URL vencida');
+  assert.ok(log.r2.some((r) => (r.status === 200 || r.status === 206) && r.key.endsWith('.mp4')), 'debió descargar el video con la URL nueva');
 });
 
 await test('URL expirada siempre (renovación inútil) → error con reintento que se recupera', async (page) => {
@@ -507,7 +502,7 @@ await test('doctor --online y la prueba de integración real funcionan (contra e
   };
   const doctor = await run(['scripts/doctor.mjs', '--online'], env);
   assert.equal(doctor.status, 0, `doctor salió con ${doctor.status}:\n${doctor.stdout}`);
-  for (const frag of ['✓ Función health', '✓ Columnas de Bunny ocultas', '✓ playback sin sesión', '✓ Catálogo público']) {
+  for (const frag of ['✓ Función health', '✓ Columna de R2 oculta', '✓ playback sin sesión', '✓ Catálogo público']) {
     assert.ok(doctor.stdout.includes(frag), `doctor no informó "${frag}":\n${doctor.stdout}`);
   }
   const integ = await run(['tests/integration/real-stack.integration.mjs'], env);
@@ -528,7 +523,7 @@ await test('el HTML/JS servido no contiene secretos ni pide columnas privadas', 
   assert.deepEqual(bad, [], 'el frontend pidió columnas privadas de classes');
   for (const path of ['/js/config.js', '/js/lib/api.js', '/js/pages/clase.js']) {
     const body = await (await fetch(S + path)).text();
-    assert.ok(!/service_role|BUNNY_API_KEY|AccessKey|token-auth-key/i.test(body), `${path} contiene algo sensible`);
+    assert.ok(!/service_role|R2_SECRET_ACCESS_KEY|R2_ACCESS_KEY_ID|X-Amz-Signature/i.test(body), `${path} contiene algo sensible`);
   }
   assert.equal((await fetch(`${S}/.env`)).status, 404);
 });

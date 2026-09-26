@@ -1,5 +1,6 @@
 /** Dobles de prueba en memoria: R2, base de datos y autenticación. */
 import { HttpError } from "../_shared/http.ts";
+import { R2Error } from "../_shared/r2/r2.service.ts";
 import type {
   AppConfig,
   AuditEntry,
@@ -28,7 +29,17 @@ export class FakeR2 implements R2Port {
   readonly bucket = "test-bucket";
   objects = new Map<string, { size: number }>();
   calls: { op: string; key: string }[] = [];
+  /** Si se define, la próxima llamada a esa operación falla como si R2 estuviera caído. */
+  failWith: { op: string; status: number } | null = null;
   private seq = 0;
+
+  private maybeFail(op: string): void {
+    if (this.failWith && this.failWith.op === op) {
+      const { status } = this.failWith;
+      this.failWith = null;
+      throw new R2Error(`R2 ${op} failed (${status})`, status, op);
+    }
+  }
 
   newObjectKey(classId: string): string {
     return `classes/${classId}/fake-${this.seq++}.mp4`;
@@ -36,22 +47,30 @@ export class FakeR2 implements R2Port {
 
   createUploadUrl(key: string, ttlSeconds: number): Promise<R2UploadCredentials> {
     this.calls.push({ op: "createUploadUrl", key });
-    return Promise.resolve({ url: `https://fake-r2.test/${this.bucket}/${key}?sig=upload`, key, expire: NOW + ttlSeconds });
+    this.maybeFail("createUploadUrl");
+    return Promise.resolve({
+      url: `https://fake-r2.test/${this.bucket}/${key}?sig=upload`,
+      key,
+      expire: NOW + ttlSeconds,
+    });
   }
 
   headObject(key: string): Promise<R2ObjectInfo> {
     this.calls.push({ op: "headObject", key });
+    this.maybeFail("headObject");
     const o = this.objects.get(key);
     return Promise.resolve(o ? { exists: true, size: o.size } : { exists: false });
   }
 
   deleteObject(key: string): Promise<boolean> {
     this.calls.push({ op: "deleteObject", key });
+    this.maybeFail("deleteObject");
     return Promise.resolve(this.objects.delete(key));
   }
 
   signPlayback(key: string, ttlSeconds: number): Promise<SignedPlayback> {
     this.calls.push({ op: "signPlayback", key });
+    this.maybeFail("signPlayback");
     return Promise.resolve({ url: `https://fake-r2.test/${this.bucket}/${key}?sig=play`, expiresAt: NOW + ttlSeconds });
   }
 

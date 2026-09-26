@@ -24,7 +24,10 @@ export async function applyVideoState(
   let status = row.video_status;
   if (info.exists) {
     status = "ready";
-  } else if (row.video_status === "uploading" || row.video_status === "processing") {
+  } else if (row.video_status !== "pending" && row.video_status !== "failed") {
+    // Estaba "uploading"/"processing"/"ready" y el objeto ya no está: la subida no llegó
+    // a completarse (o el objeto se borró aparte). "pending" se deja como está: puede que
+    // la subida ni siquiera haya empezado todavía.
     status = "failed";
   }
 

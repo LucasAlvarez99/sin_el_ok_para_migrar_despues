@@ -4,7 +4,7 @@ import { createHandler as createUpload } from "../admin-create-upload/handler.ts
 import { createHandler as createSync } from "../admin-sync-video/handler.ts";
 import { createHandler as createDelete } from "../admin-delete-class/handler.ts";
 import { createHandler as createPlayback } from "../playback/handler.ts";
-import { ADMIN_ID, DEV_ID, LIB, makeDeps, post } from "./fakes.ts";
+import { ADMIN_ID, DEV_ID, makeDeps, post } from "./fakes.ts";
 
 const codeOf = async (r: Response) => (await r.json()).error?.code;
 
@@ -50,9 +50,10 @@ Deno.test("roles: matriz de acceso — usuario, propietario y desarrollador en c
 });
 
 Deno.test("roles: el usuario final solo usa la app pública (playback), nunca la administración", async () => {
-  const { deps, repo } = makeDeps();
-  const v = await deps.bunny.createVideo("v");
-  const c = repo.addClass({ bunny_video_id: v.guid, bunny_library_id: LIB, video_status: "ready", is_published: true });
+  const { deps, repo, r2 } = makeDeps();
+  const key = r2.newObjectKey(crypto.randomUUID());
+  r2.putObject(key);
+  const c = repo.addClass({ r2_object_key: key, video_status: "ready", is_published: true });
   assert.equal((await createPlayback(deps)(post({ class_id: c.id }, "user"))).status, 200);
   for (const h of [createUpload(deps), createSync(deps), createDelete(deps)]) {
     assert.equal((await h(post({ class_id: c.id, title: "x" }, "user"))).status, 403);
@@ -80,15 +81,16 @@ Deno.test("auditoría: si falla el registro, subir NO se rompe (no es destructiv
 });
 
 Deno.test("auditoría: borrar registra ANTES de borrar y, si no se puede auditar, no se borra nada", async () => {
-  const { deps, audit, repo, api } = makeDeps();
-  const v = await deps.bunny.createVideo("v");
-  const c = repo.addClass({ title: "A borrar", bunny_video_id: v.guid, is_published: false });
+  const { deps, audit, repo, r2 } = makeDeps();
+  const key = r2.newObjectKey(crypto.randomUUID());
+  r2.putObject(key);
+  const c = repo.addClass({ title: "A borrar", r2_object_key: key, is_published: false });
 
   audit.fail = true; // el historial no responde
   const blocked = await createDelete(deps)(post({ class_id: c.id }, "owner"));
   assert.equal(blocked.status, 500);
   assert.equal(repo.classes.has(c.id), true, "la clase sigue existiendo");
-  assert.equal(api.videos.has(v.guid), true, "el video en Bunny sigue existiendo");
+  assert.equal(r2.objects.has(key), true, "el objeto en R2 sigue existiendo");
 
   audit.fail = false;
   const ok = await createDelete(deps)(post({ class_id: c.id }, "developer"));
